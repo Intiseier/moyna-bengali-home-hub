@@ -1,0 +1,7 @@
+# How "Moyna" sounds, used when the room is QUIET. Format: sounds :boost #threshold @label
+# (English ARPAbet phonemes). Lower threshold = catches more, more false wakes.
+# Beep test with her voice: 15 of 16 calls caught with these four at 0.10.
+M OY1 N AH0 :2.0 #0.10 @MOYNA
+M OY1 N AA1 :2.0 #0.10 @MOYNA
+M AY1 N AA1 :2.0 #0.10 @MOYNA
+M AY1 N AH0 :2.0 #0.10 @MOYNA

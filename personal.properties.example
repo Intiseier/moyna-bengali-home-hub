@@ -1,0 +1,9 @@
+## Personal settings for Moyna. Copy this file to "personal.properties" and edit it.
+## personal.properties is private and never uploaded (see .gitignore).
+
+## Who Moyna suggests contacting for health questions and emergencies,
+## written the way you'd say it in English, e.g. "her son", "her daughter Rina", "a family member".
+CARE_CONTACT=a family member
+
+## Emergency phone number where she lives (911 in the US/Canada, 999 in Bangladesh/UK, 112 in the EU).
+EMERGENCY_NUMBER=911

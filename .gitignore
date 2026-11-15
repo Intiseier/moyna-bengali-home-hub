@@ -1,0 +1,25 @@
+# Secrets and personal settings: NEVER commit
+local.properties
+personal.properties
+NOTES-PRIVATE.md
+*.keystore
+*.jks
+
+# Build output
+.gradle/
+build/
+.kotlin/
+*.apk
+*.log
+
+# Test recordings (wake word / echo tests) - may contain people's voices
+*.wav
+wake-test.pcm
+echo-*.pcm
+
+# Editors / OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+desktop.ini

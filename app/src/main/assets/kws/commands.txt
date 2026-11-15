@@ -1,0 +1,16 @@
+# Stop words Moyna listens for DURING a conversation.
+# Format: sounds :boost #threshold @label   (lower threshold = catches more, more false stops)
+# English sounds (ARPAbet) and Chinese-style sounds (pinyin) both work; the model knows both.
+# Every label must start with STOP. While Moyna herself is talking, a stop only counts if
+# her name was heard just before it (or the label starts with STOP_NAME), so her own voice
+# coming out of the speaker cannot stop her.
+S T AA1 P :2.0 #0.20 @STOP_EN
+M AY1 N AA1 S T AA1 P :2.0 #0.20 @STOP_NAME_EN1
+M AY1 N ER0 S T AA1 P :2.0 #0.20 @STOP_NAME_EN2
+M AY1 N AA1 T AH1 M :2.0 #0.20 @STOP_NAME_THAMO
+t ā m ò :2.0 #0.20 @STOP_THAMO_PY
+t ā m én :2.0 #0.20 @STOP_THAMEN_PY
+T AA1 M OW0 :2.0 #0.20 @STOP_THAMO_EN
+T AA1 M EH0 N :2.0 #0.20 @STOP_THAMEN_EN
+j iù g ào :2.0 #0.20 @STOP_CHUP_PY
+B AA1 N D OW0 K AO1 R OW0 :2.0 #0.20 @STOP_BONDHO
