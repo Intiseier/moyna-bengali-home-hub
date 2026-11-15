@@ -1,7 +1,11 @@
-# Moyna (ময়না): a Bengali voice assistant on an old Android phone
+# Moyna (ময়না): a free Bengali voice assistant on an old Android phone
 
-**Turn a spare budget Android phone into an always-on, hands-free voice assistant for a Bengali-speaking parent or grandparent.**
-Say *"Moyna"*, hear a chime, ask anything in Bengali (or English), and Moyna answers out loud in simple, warm, spoken Bangladeshi Bengali, powered by Google's Gemini Live API.
+**Like Alexa, but in Bengali, and it costs nothing.** Turn the old Android phone sitting in your drawer into an always-on voice assistant for a Bengali-speaking parent, grandparent or relative.
+They say *"Moyna"*, hear a chime, ask anything out loud in Bengali (or English), and Moyna answers out loud in simple, warm, spoken Bangladeshi Bengali.
+
+**Powered by Google's free Gemini Live API.** No subscription, no new hardware, no app to open. All you need is an old Android phone, a charger, Wi-Fi and a free API key.
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE) ![Android 11+](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white) ![Works on 32-bit phones](https://img.shields.io/badge/works%20on-old%2032--bit%20phones-blue) ![Gemini Live API](https://img.shields.io/badge/Gemini%20Live%20API-free%20tier-8E75B2) ![Language](https://img.shields.io/badge/speaks-Bengali%20%7C%20English-orange)
 
 <p align="center">
   <img src="docs/screenshots/1-waiting.png" width="200" alt="Waiting screen: Moyna is not listening; call 'Moyna' or tap the screen">
@@ -10,17 +14,25 @@ Say *"Moyna"*, hear a chime, ask anything in Bengali (or English), and Moyna ans
   &nbsp;
   <img src="docs/screenshots/3-sleeping.png" width="200" alt="Sleep screen: Moyna will listen again in 2 minutes">
 </p>
-<p align="center"><sub>Waiting · Listening (red stop button) · Sleeping after "stop". The whole interface is big Bengali text: no English, nothing to read in small print.</sub></p>
+<p align="center"><sub>Waiting · Listening (red stop button) · Sleeping after "stop".<br>The screen is simple on purpose. Everything happens by voice; nobody has to read or tap anything.</sub></p>
 
 ---
 
 ## Why I built this
 
-My mom speaks Bangladeshi Bengali, a little English, and can't read much English. Phone assistants either don't understand her, answer in stiff textbook Bengali, or need her to unlock a phone and find an app. I had an old budget phone in a drawer, so I wanted something that **just sits in the living room, plugged in, and answers when she calls it by name**, the way a person would.
+My mom speaks Bangladeshi Bengali and a little English. Like a lot of older Bengali folks, she knows how to scroll YouTube and Facebook, and that's about it. She can't type a question into Google. She won't open an app and figure it out. For her, that's way too many steps.
 
-*Moyna* (ময়না) is the Bengali name for the hill myna, the talking bird. It also turned out to be a great wake word: short, distinctive, and easy for her to say.
+But she *does* know how to talk to a voice assistant. She learned to say "Alexa, turn on the lights" and it just works. So I thought: what if there was one of those in **Bengali**, one she could ask anything?
 
-Getting it right took a lot of real-world testing. The TV kept waking it up. It once got stuck chatting with a Bengali drama on the TV. It stopped itself by hearing its own voice. The phone only runs 32-bit apps. Every feature below exists because something like that happened in our living room.
+Because that's the real gap. Older Bengali people mostly learn things by **talking to people**: about health, cooking, staying active, what's going on in the world. And people aren't always around to ask. So a whole world of information is basically locked behind typing, apps and English.
+
+Moyna bridges that gap. It sits in one place in the living room, always plugged in, just like an Alexa. My mom says *"Moyna"*, asks her question in Bengali, and gets the answer back in Bengali, by voice. In a way she can finally use a search engine, in her own language, without learning English or touching a screen. She can just *yap* with it: about her knee pain, what to cook when it's raining, whether it'll rain today, or how the Bangladesh cricket team did.
+
+I built it for my mom, but it's really for **any older Bengali person** who'd rather talk than tap.
+
+*Moyna* (ময়না) is the Bengali name for the hill myna, the talking bird. It also turned out to be a great wake word: short, unique and easy to say.
+
+Getting it right took a lot of real-world testing in our living room. The TV kept waking it up. It once got stuck chatting back and forth with a Bengali drama on the TV. It even stopped itself by hearing its own voice. Every feature below exists because something like that actually happened.
 
 ## What it does
 
@@ -35,32 +47,55 @@ Getting it right took a lot of real-world testing. The TV kept waking it up. It 
 - 🔌 **Appliance-grade reliability.** Runs as a foreground service, starts by itself after a reboot, survives Wi-Fi drops, and plays a pre-recorded Bengali *"the internet isn't working"* message when offline. It's exempt from battery optimization.
 - 📊 **Talk-time bar.** A thin bar along the bottom shows how much Moyna was used today (it resets at midnight).
 
-## How it works
-
-```mermaid
-flowchart LR
-    Mic[Phone mic, 16 kHz] --> KWS{{"sherpa-onnx wake word (on the phone)<br/>quiet room vs TV mode"}}
-    KWS -- "Moyna!" --> Chime((chime))
-    Chime --> Live["Gemini Live API (WebSocket)<br/>speech in, speech out"]
-    Live -- "voice answer, 24 kHz" --> Speaker[Speaker]
-    Live -- "look_up(question)" --> Search["Gemini Live + Google Search"]
-    Search -- facts --> Live
-    Live -- "go_to_sleep / set_volume / end" --> App[Moyna app]
-    Mic -- "during a conversation" --> Stop{{"on-phone stop words<br/>thamo / Moyna stop"}} --> App
-```
-
-- **One conversation = one short Live session.** Her voice streams as 16 kHz PCM. Gemini's own voice-activity detection decides when she's finished, tuned to be patient with pauses. Answers stream back as 24 kHz audio.
-- **While Moyna talks, the mic isn't sent to Gemini**, because Gemini would hear and transcribe its own echo. Interrupting works with the stop button, the "Moyna stop" phrase, or a loud voice close to the phone.
-- **Look-ups use a second model.** On the free tier, Google Search only works with the older Live model, so the main model calls a `look_up` tool and the app asks the search-capable model in the background.
-
 ## What you need
 
-- **An Android phone, Android 11 or newer.** Developed on a Snapdragon 430 budget phone that runs **32-bit only** (armeabi-v7a), and that's the ABI the app ships. Note the sherpa-onnx int8/"mobile" models hang on 32-bit ARM, so full-precision ones are used.
-- **A Google Gemini API key** from [Google AI Studio](https://aistudio.google.com). The free tier works.
-- **A Windows, macOS or Linux PC** with a USB cable. You build from the command line; no Android Studio is required.
-- **Wi-Fi**, and a place to leave the phone plugged in.
+- **An old Android phone, Android 11 or newer.** A cheap one is perfect. Moyna was built on a Snapdragon 430 budget phone that only runs 32-bit apps.
+- **A charger and Wi-Fi.** The phone stays plugged in, in one spot, like a smart speaker.
+- **A free Google Gemini API key** from [Google AI Studio](https://aistudio.google.com) ("Get API key"). Treat it like a password.
+- **A computer** (Windows, Mac or Linux) and a USB cable, just for setting it up.
 
-## Setup
+## Set it up: two ways
+
+### Option A: No coding. Let an AI do it (the "vibe-coded" way)
+
+You don't need to understand any commands. An AI coding assistant that can run things on your computer will do the technical part, and you just follow along. Moyna itself was built exactly this way.
+
+1. **Get the phone ready.**
+   - Reset it to factory settings if you like (optional, but it gives a clean start). You can skip adding a Google account.
+   - Turn on **Developer options**: go to *Settings → About phone* and tap **Build number** 7 times.
+   - Go to *Settings → System → Developer options* and turn on **USB debugging**.
+   - Plug the phone into your computer. When the phone asks *"Allow USB debugging?"*, tick **Always allow** and tap **Allow**.
+2. **Get your free Gemini API key** at [aistudio.google.com](https://aistudio.google.com) → **Get API key** → **Create API key**. Keep it somewhere safe. **Don't paste it into a chat;** the AI will tell you which private file to put it in.
+3. **Open an AI coding assistant that can run commands on your computer**, such as [Claude Code](https://claude.com/claude-code) or OpenAI Codex. A plain chat website can't install things on your computer or talk to the phone, so it won't work for this.
+4. **Copy this whole message and send it to the AI:**
+
+   ```text
+   I want to set up "Moyna", a free Bengali voice assistant, on an old Android phone for
+   my parent. The project is here: https://github.com/Intiseier/moyna-bengali-voice-assistant
+
+   I'm not technical, so explain each step in plain, simple English and ask me before
+   anything destructive. The phone is plugged into this computer with USB debugging on.
+
+   Please:
+   1. Download the project and read its README.md first.
+   2. Install whatever is needed to build it (Java 17, the Android SDK command-line tools,
+      adb), with no Android Studio. Check that `adb devices` shows my phone.
+   3. Tell me exactly where to paste my Gemini API key (local.properties) so it never gets
+      printed, logged, shared or uploaded anywhere. Never show the key back to me.
+   4. Help me fill in personal.properties (who to suggest contacting for health questions,
+      and our emergency number).
+   5. Build the app and install it on my phone. Then run the permission commands from the
+      README ("Option B", step 7), turn off the phone's screen lock, and set media volume to max.
+   6. Help me test it: I'll say "Moyna", wait for the chime, and ask something in Bengali.
+      If the wake word misses a lot, use the README's beep test to tune it.
+   Stop at each step and tell me what to check on the phone.
+   ```
+
+5. **Answer its questions and follow along.** When it's done, unplug the phone from the computer, plug it into a wall charger in the living room, and say *"Moyna"*.
+
+> 💡 Want changes later, like a different name, voice or personality, or a new command? Just ask the same AI: *"In the Moyna project, change …"*. Everything easy to change is in one settings file.
+
+### Option B: Manual setup (for developers)
 
 1. **Install a JDK 17, the Android SDK command-line tools** (platform 35, build-tools 35) **and `adb`.** Point `JAVA_HOME` and `ANDROID_HOME` at them.
 2. **Clone the repository:**
@@ -92,6 +127,25 @@ flowchart LR
    `SYSTEM_ALERT_WINDOW` lets Moyna turn the screen on and come to the front when called.
 
 > ⚠️ The API key is compiled into the APK. That's fine for a phone that stays in your home, but don't publish the APK.
+
+## How it works
+
+```mermaid
+flowchart LR
+    Mic[Phone mic, 16 kHz] --> KWS{{"sherpa-onnx wake word (on the phone)<br/>quiet room vs TV mode"}}
+    KWS -- "Moyna!" --> Chime((chime))
+    Chime --> Live["Gemini Live API (WebSocket)<br/>speech in, speech out"]
+    Live -- "voice answer, 24 kHz" --> Speaker[Speaker]
+    Live -- "look_up(question)" --> Search["Gemini Live + Google Search"]
+    Search -- facts --> Live
+    Live -- "go_to_sleep / set_volume / end" --> App[Moyna app]
+    Mic -- "during a conversation" --> Stop{{"on-phone stop words<br/>thamo / Moyna stop"}} --> App
+```
+
+- **One conversation = one short Live session.** Her voice streams as 16 kHz PCM. Gemini's own voice-activity detection decides when she's finished, tuned to be patient with pauses. Answers stream back as 24 kHz audio.
+- **While Moyna talks, the mic isn't sent to Gemini**, because Gemini would hear and transcribe its own echo. Interrupting works with the stop button, the "Moyna stop" phrase, or a loud voice close to the phone.
+- **Look-ups use a second model.** On the free tier, Google Search only works with the older Live model, so the main model calls a `look_up` tool and the app asks the search-capable model in the background.
+- **32-bit friendly.** The app ships only armeabi-v7a native code. The sherpa-onnx int8/"mobile" models hang on 32-bit ARM, so full-precision ones are used.
 
 ## Make it yours
 
@@ -128,6 +182,15 @@ Everything easy to change is in [`MoynaConfig.kt`](app/src/main/java/app/moyna/M
 - **On the free tier, Google may use what's said to improve its products.** Turning on billing for the key stops that (a few dollars a month for a few conversations a day).
 - **The wake word runs entirely on the phone.** Audio goes to Google only after the chime, during a conversation.
 - **This is not a medical device.** Moyna gives general information and always points to a doctor or family member.
+
+## What's next (ideas)
+
+- 📲 **A downloadable app**: install from a link, enter your key on the phone, done. No computer needed.
+- ⏰ **Reminders**: *"remind me at 5 to take my medicine"*, spoken at the right time.
+- 📞 **"Call my son"**: send a notification to a family member's phone when she asks.
+- 🌍 **Other languages**: the same idea works for any language Gemini speaks; only the wake word and prompts change.
+
+Ideas and pull requests are welcome.
 
 ## Credits
 
