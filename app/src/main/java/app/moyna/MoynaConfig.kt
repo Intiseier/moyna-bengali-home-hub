@@ -1,7 +1,10 @@
 package app.moyna
 
-/** One tile on the hub screen: a big emoji with a Bengali label. An empty id is a reserved empty slot. */
-data class Tile(val id: String, val emoji: String, val label: String)
+/**
+ * One tile on the hub screen: an emoji with a label (Bengali and English).
+ * width: 2 = a full row, 1 = half a row, 0.5 = a small quarter-row button.
+ */
+data class Tile(val id: String, val emoji: String, val label: String, val labelEn: String, val width: Float = 1f)
 
 /**
  * ALL the easy-to-change settings for Moyna live in this one file.
@@ -10,15 +13,19 @@ data class Tile(val id: String, val emoji: String, val label: String)
 object MoynaConfig {
 
     // ---- Hub screen ----
-    // The tiles, in order, two per row. Add, remove or reorder lines here.
-    // Known ids: bus, prayer, weather, talk (same as saying "Moyna"), quiet (sleep 1 hour). "" = empty slot.
+    // The tiles, in order. Add, remove or reorder lines here; tiles fill rows left to right by width.
+    // Known ids: bus (next 3 buses per line), prayer, talk (same as saying "Moyna"), quiet (sleep 1 hour),
+    // weather (now, plus the next 7 hours).
     val TILES = listOf(
-        Tile("bus", "🚌", "বাস"),
-        Tile("prayer", "🕌", "নামাজ"),
-        Tile("talk", "🎤", "ময়না"),
-        Tile("quiet", "😴", "চুপ"),
-        Tile("weather", "🌦️", "আবহাওয়া"),     // drawn as a wide strip: now, plus the next 7 hours
+        Tile("bus", "🚌", "বাস", "Bus", width = 2f),
+        Tile("prayer", "🕌", "নামাজ", "Prayer", width = 1f),
+        Tile("talk", "🎤", "ময়না", "Moyna", width = 0.5f),
+        Tile("quiet", "😴", "চুপ", "Quiet", width = 0.5f),
+        Tile("weather", "🌦️", "আবহাওয়া", "Weather", width = 2f),
     )
+    // Words on the screen: "en" = English, "bn" = Bengali. Can be switched in the admin screen.
+    // (What Moyna SAYS is always Bengali.)
+    const val DEFAULT_SCREEN_LANGUAGE = "en"
     // The quiet tile puts Moyna to sleep for this many minutes (tap it again to wake her).
     const val QUIET_TILE_MINUTES = 60
 

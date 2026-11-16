@@ -51,6 +51,9 @@ class MainActivity : Activity(), SensorEventListener {
     private val tileViews = HashMap<String, LinearLayout>()
     private val tileEmoji = HashMap<String, TextView>()
     private val tileSubs = HashMap<String, TextView>()
+    private val tileLabels = HashMap<String, TextView>()
+    private val busCols = ArrayList<Triple<String, TextView, TextView>>()   // line, next bus, the two after it
+    private var prayerTime: TextView? = null
     // Weather strip
     private var wxNow: TextView? = null
     private var wxTemp: TextView? = null
@@ -61,6 +64,11 @@ class MainActivity : Activity(), SensorEventListener {
     private var detail: String? = null
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    /** Words on the screen are English or Bengali (admin screen switch). What Moyna says is always Bengali. */
+    private fun english() = getSharedPreferences("moyna", Context.MODE_PRIVATE)
+        .getString("ui_lang", MoynaConfig.DEFAULT_SCREEN_LANGUAGE) == "en"
+    private fun tr(en: String, bn: String) = if (english()) en else bn
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,28 +90,36 @@ class MainActivity : Activity(), SensorEventListener {
         // ----- status line (Bengali) -----
         status = text(22f).apply { setPadding(dp(8), dp(4), dp(8), dp(4)) }
 
-        // ----- tiles, two per row; the weather tile is a wide strip of its own -----
+        // ----- tiles: rows are filled left to right by each tile's width (2 = a whole row) -----
         grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(6), 0, dp(6), dp(10)) }
         val margin = dp(4)
-        fun cell(v: View) = LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(margin, margin, margin, margin) }
         var row: LinearLayout? = null
-        fun flush() { row?.let { if (it.childCount == 1) it.addView(View(this), cell(View(this))); grid.addView(it, LinearLayout.LayoutParams(-1, 0, 1f)) }; row = null }
+        var used = 0f
+        fun flush() {
+            row?.let {
+                if (used < 2f) it.addView(View(this), LinearLayout.LayoutParams(0, -1, 2f - used))
+                grid.addView(it, LinearLayout.LayoutParams(-1, 0, 0.9f))
+            }
+            row = null; used = 0f
+        }
         for (t in MoynaConfig.TILES) {
-            if (t.id == "weather") {
+            if (t.width >= 2f) {
                 flush()
-                grid.addView(weatherStrip(), LinearLayout.LayoutParams(-1, 0, 1.1f).apply { setMargins(margin, margin, margin, margin) })
+                val v = when (t.id) { "weather" -> weatherStrip(); "bus" -> busTile(t); else -> tileView(t) }
+                grid.addView(v, LinearLayout.LayoutParams(-1, 0, if (t.id == "bus") 1.25f else 1.1f).apply { setMargins(margin, margin, margin, margin) })
                 continue
             }
+            if (used + t.width > 2f) flush()
             val r = row ?: LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }.also { row = it }
-            r.addView(tileView(t), cell(r))
-            if (r.childCount == 2) flush()
+            r.addView(tileView(t), LinearLayout.LayoutParams(0, -1, t.width).apply { setMargins(margin, margin, margin, margin) })
+            used += t.width
         }
         flush()
 
         // ----- conversation panel: big words, and the red stop button while Moyna makes sound -----
         talkText = text(46f, bold = true)
         stop = text(34f, bold = true).apply {
-            text = "থামো"
+            text = "STOP"
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL; setColor(Color.rgb(205, 30, 30)); setStroke(dp(4), Color.WHITE)
             }
@@ -146,20 +162,53 @@ class MainActivity : Activity(), SensorEventListener {
 
     private fun tileBackground() = GradientDrawable().apply { cornerRadius = dp(18).toFloat(); setColor(Color.argb(38, 255, 255, 255)) }
 
-    /** One tile: big emoji, Bengali label, and a line or two of live info (bus minutes, next prayer). */
+    /** One tile: emoji and label. Small tiles (talk, quiet) are compact; the prayer tile also shows the next prayer. */
     private fun tileView(t: Tile): View {
+        val small = t.width < 1f
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = tileBackground() }
         if (t.id.isEmpty()) { box.alpha = 0.3f; return box }   // reserved slot: a faint empty tile
-        val emoji = text(40f).apply { text = t.emoji }
-        val sub = text(19f, bold = true).apply { setTextColor(Color.rgb(255, 225, 150)); visibility = View.GONE; setPadding(0, dp(2), 0, 0) }
-        box.addView(emoji)
-        box.addView(text(25f, bold = true).apply { text = t.label; setPadding(0, dp(2), 0, 0) })
-        box.addView(sub)
+        val emoji = text(if (small) 30f else 26f).apply { text = t.emoji }
+        val label = text(if (small) 16f else 20f, bold = true).apply { setPadding(0, dp(2), 0, 0) }
+        val sub = text(23f, bold = true).apply { setTextColor(Color.rgb(255, 225, 150)); visibility = View.GONE }
+        box.addView(emoji); box.addView(label); box.addView(sub)
+        if (t.id == "prayer") {
+            // "Asr" in the warm colour, then the time, large.
+            prayerTime = text(29f, bold = true).also { box.addView(it) }
+        }
         box.setOnClickListener {
             box.alpha = 0.5f; box.animate().alpha(1f).setDuration(350).start()
             MoynaHub.engine?.tileTapped(t.id)
         }
-        tileViews[t.id] = box; tileEmoji[t.id] = emoji; tileSubs[t.id] = sub
+        tileViews[t.id] = box; tileEmoji[t.id] = emoji; tileSubs[t.id] = sub; tileLabels[t.id] = label
+        return box
+    }
+
+    /** The bus tile: one column per bus line, each with the next bus large and the two after it. */
+    private fun busTile(t: Tile): View {
+        val header = text(19f, bold = true)
+        tileLabels[t.id] = header; tileEmoji[t.id] = header
+        val cols = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        // Shown right to left of the spoken order, so the second line of BUS_STOPS is on the left.
+        for ((line, _) in Bus.stops.reversed()) {
+            val badge = text(21f, bold = true).apply {
+                text = line.replace("BX", "Bx")
+                setPadding(dp(12), dp(3), dp(12), dp(3))
+                background = GradientDrawable().apply { cornerRadius = dp(7).toFloat(); setColor(Color.rgb(0, 57, 166)) }   // bus-sign blue
+            }
+            val first = text(31f, bold = true).apply { setPadding(0, dp(3), 0, 0) }
+            val rest = text(20f, bold = true).apply { setTextColor(Color.rgb(255, 225, 150)) }
+            busCols.add(Triple(line, first, rest))
+            cols.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                addView(badge, LinearLayout.LayoutParams(-2, -2)); addView(first); addView(rest)
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = tileBackground()
+            addView(header, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(4) }); addView(cols, LinearLayout.LayoutParams(-1, -2))
+            setOnClickListener { alpha = 0.5f; animate().alpha(1f).setDuration(350).start(); MoynaHub.engine?.tileTapped(t.id) }
+        }
+        tileViews[t.id] = box
         return box
     }
 
@@ -190,18 +239,28 @@ class MainActivity : Activity(), SensorEventListener {
         return box
     }
 
-    /** Put the latest bus, prayer and weather information on the tiles. */
+    /** Put the latest bus, prayer and weather information on the tiles, in the screen language. */
     private fun fillTiles() {
-        tileSubs["bus"]?.let {
-            val fresh = Bus.ageSeconds() <= 180
-            it.text = if (fresh) Bus.tileText() else ""; it.visibility = if (fresh) View.VISIBLE else View.GONE
-            tileEmoji["bus"]?.textSize = if (fresh) 24f else 40f
+        val en = english()
+        for (t in MoynaConfig.TILES) tileLabels[t.id]?.text = when (t.id) {
+            "bus" -> "${t.emoji}  ${if (en) t.labelEn else t.label}"
+            else -> if (en) t.labelEn else t.label
         }
-        tileSubs["prayer"]?.let {
-            val t = Prayer.tileText()
-            it.text = t; it.visibility = if (t.isEmpty()) View.GONE else View.VISIBLE
-            tileEmoji["prayer"]?.textSize = if (t.isEmpty()) 40f else 34f
+        val fresh = Bus.ageSeconds() <= 180
+        for ((line, first, rest) in busCols) {
+            val times = if (fresh) Bus.tileTimes(line, en) else emptyList()
+            val big = times.firstOrNull() ?: if (fresh) tr("No bus", "বাস নেই") else "…"
+            // The hourglass (bus has not left the terminal yet) is drawn small beside the minutes.
+            first.text = android.text.SpannableString(big).apply {
+                val i = big.indexOf('⏳')
+                if (i >= 0) setSpan(android.text.style.RelativeSizeSpan(0.5f), i - 1, big.length, 0)
+            }
+            rest.text = if (times.size > 1) times.drop(1).joinToString("  ·  ") + " " + tr("min", "মি") else ""
         }
+        val p = Prayer.tileText(en)
+        tileSubs["prayer"]?.let { it.text = p?.first ?: ""; it.visibility = if (p == null) View.GONE else View.VISIBLE }
+        prayerTime?.text = p?.second ?: ""
+        tileLabels["prayer"]?.visibility = if (p == null) View.VISIBLE else View.GONE   // the mosque picture says "prayer" already
         if (Weather.has()) {
             wxNow?.text = Weather.icon(Weather.code, Weather.isDay)
             wxTemp?.text = "${Weather.tempF}°"
@@ -214,7 +273,7 @@ class MainActivity : Activity(), SensorEventListener {
                 t.text = if (w == null) "" else "${w.tempF}°"
             }
         } else {
-            wxNow?.text = "🌦️"; wxTemp?.text = "আবহাওয়া"; wxRange?.text = ""
+            wxNow?.text = "🌦️"; wxTemp?.text = tr("Weather", "আবহাওয়া"); wxRange?.text = ""
         }
     }
     private val hourFmt = DateTimeFormatter.ofPattern("ha", Locale.ENGLISH)
@@ -382,14 +441,14 @@ class MainActivity : Activity(), SensorEventListener {
         state = s; detail = d
         if (changed && s != MoynaState.IDLE) lastTouch = SystemClock.elapsedRealtime()   // an event brightens the screen
         status.text = when (s) {
-            MoynaState.IDLE -> "\"ময়না\" বলে ডাকুন"
-            MoynaState.SLEEPING -> "ময়না ঘুমাচ্ছে, ছুঁয়ে জাগান\n${d ?: ""}"
+            MoynaState.IDLE -> tr("Say \"Moyna\"", "\"ময়না\" বলে ডাকুন")
+            MoynaState.SLEEPING -> tr("Moyna is sleeping. Tap 😴 to wake", "ময়না ঘুমাচ্ছে, ছুঁয়ে জাগান\n${d ?: ""}")
             else -> ""
         }
         talkText.text = when (s) {
-            MoynaState.LISTENING -> "বলুন...\nময়না শুনছে"
-            MoynaState.THINKING -> when (d) { "search" -> "একটু দেখে\nনিচ্ছি..."; "tile" -> "বলছি..."; else -> "একটু\nভাবছি..." }
-            MoynaState.SPEAKING -> if (d == "azan") "🕌\nআজান" else "ময়না\nবলছে..."
+            MoynaState.LISTENING -> tr("Listening...", "বলুন...\nময়না শুনছে")
+            MoynaState.THINKING -> when (d) { "search" -> tr("Looking\nit up...", "একটু দেখে\nনিচ্ছি..."); "tile" -> "..."; else -> tr("Thinking...", "একটু\nভাবছি...") }
+            MoynaState.SPEAKING -> if (d == "azan") tr("🕌\nAzan", "🕌\nআজান") else tr("Moyna is\nspeaking...", "ময়না\nবলছে...")
             MoynaState.ERROR -> d ?: "সমস্যা হয়েছে"
             MoynaState.TEST -> d ?: "পরীক্ষা চলছে"
             else -> ""
@@ -397,6 +456,7 @@ class MainActivity : Activity(), SensorEventListener {
         talkText.textSize = if (s == MoynaState.ERROR || s == MoynaState.TEST) 28f else 46f
         // The red button shows only while Moyna is making sound (talking, the azan, or the look-up sounds).
         stop.visibility = if (s == MoynaState.SPEAKING || s == MoynaState.THINKING && d == "search") View.VISIBLE else View.INVISIBLE
+        stop.text = tr("STOP", "থামো")
         // The quiet tile lights up while she is asleep.
         tileViews["quiet"]?.let {
             (it.background as GradientDrawable).setColor(if (s == MoynaState.SLEEPING) Color.rgb(90, 80, 160) else Color.argb(38, 255, 255, 255))
@@ -484,6 +544,7 @@ class MainActivity : Activity(), SensorEventListener {
                 if (today != null) append("Prayer times${if (today.calculated) " (CALCULATED, no calendar)" else " (calendar)"}: " +
                     "Fajr ${today.fajr}, Zuhr ${today.zuhr}, Asr ${today.asr}, Maghrib ${today.maghrib}, Isha ${today.isha}\n")
                 append("Calendar ends: ${Prayer.lastCalendarDate ?: "no calendar loaded"}\n")
+                append("Screen words: ${if (english()) "English" else "Bengali"}\n")
                 append("Light: ${lux.toInt()} lux (${if (night) "night" else "day"} look)\n")
                 append("Kiosk: " + when { !Kiosk.isOwner(this@MainActivity) -> "not set up"; Kiosk.isOff(this@MainActivity) -> "OFF"; else -> "ON" })
             }
@@ -502,6 +563,10 @@ class MainActivity : Activity(), SensorEventListener {
                 text = name; setTextColor(Color.WHITE); isChecked = prefs.getBoolean("azan_$key", true)
                 setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("azan_$key", on).apply(); Log.i("Moyna", "admin: azan $key ${if (on) "on" else "off"}") }
             })
+        }
+        button("Screen words: switch English / বাংলা") {
+            prefs.edit().putString("ui_lang", if (english()) "bn" else "en").apply()
+            show(state, detail); fillTiles()
         }
         button("Play the azan now (test)") { dialog.dismiss(); MoynaHub.engine?.playAzan("test") }
         button("Refresh") { }

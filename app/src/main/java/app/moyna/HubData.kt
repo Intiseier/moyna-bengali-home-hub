@@ -59,7 +59,7 @@ object Bus {
     val stops: List<Pair<String, String>> = BuildConfig.BUS_STOPS.split(',').mapNotNull {
         val p = it.trim().split(':'); if (p.size == 2 && p[0].isNotBlank()) p[0].trim().uppercase() to p[1].trim() else null
     }
-    @Volatile var next: Map<String, BusArrival?> = emptyMap()   // null = no bus coming soon
+    @Volatile var next: Map<String, List<BusArrival>> = emptyMap()   // up to 3 per line; empty = no bus coming soon
     @Volatile var fetchedAt = 0L                                // elapsedRealtime of the last good answer
     @Volatile private var busy = false
 
@@ -71,13 +71,13 @@ object Bus {
         if (!ready() || busy) { done?.invoke(false); return }
         busy = true
         thread(name = "moyna-bus", isDaemon = true) {
-            val out = HashMap<String, BusArrival?>()
+            val out = HashMap<String, List<BusArrival>>()
             var ok = true
             for ((line, stop) in stops) {
                 val o = HubData.getJson("https://bustime.mta.info/api/siri/stop-monitoring.json?key=${BuildConfig.MTA_BUSTIME_KEY}" +
-                    "&MonitoringRef=$stop&LineRef=MTA%20NYCT_$line&MaximumStopVisits=2")
+                    "&MonitoringRef=$stop&LineRef=MTA%20NYCT_$line&MaximumStopVisits=4")
                 if (o == null) { ok = false; continue }
-                out[line] = try { parse(line, o) } catch (e: Exception) { Log.w("Moyna", "bus answer not understood: ${e.message}"); ok = false; null }
+                try { out[line] = parse(line, o) } catch (e: Exception) { Log.w("Moyna", "bus answer not understood: ${e.message}"); ok = false }
             }
             if (ok) { next = out; fetchedAt = SystemClock.elapsedRealtime(); HubData.onChange?.invoke() }
             busy = false
@@ -85,10 +85,11 @@ object Bus {
         }
     }
 
-    private fun parse(line: String, o: JSONObject): BusArrival? {
+    private fun parse(line: String, o: JSONObject): List<BusArrival> {
         val visits = o.getJSONObject("Siri").getJSONObject("ServiceDelivery")
-            .getJSONArray("StopMonitoringDelivery").getJSONObject(0).optJSONArray("MonitoredStopVisit") ?: return null
+            .getJSONArray("StopMonitoringDelivery").getJSONObject(0).optJSONArray("MonitoredStopVisit") ?: return emptyList()
         val now = OffsetDateTime.now()
+        val list = ArrayList<BusArrival>()
         for (i in 0 until visits.length()) {
             val j = visits.getJSONObject(i).getJSONObject("MonitoredVehicleJourney")
             val call = j.getJSONObject("MonitoredCall")
@@ -102,9 +103,10 @@ object Bus {
             val notLeft = "layover" in progress || "prevTrip" in progress
             val dep = j.optString("OriginAimedDepartureTime")
             val depIn = if (dep.isBlank()) 0 else (Duration.between(now, OffsetDateTime.parse(dep)).seconds / 60).toInt().coerceAtLeast(0)
-            return BusArrival(line, ((mins + 30) / 60).toInt().coerceAtLeast(0), notLeft, depIn)
+            list.add(BusArrival(line, ((mins + 30) / 60).toInt().coerceAtLeast(0), notLeft, depIn))
+            if (list.size >= 3) break
         }
-        return null
+        return list
     }
 
     /** "M15" -> "এম 15" (how a line name is said out loud). */
@@ -116,7 +118,7 @@ object Bus {
 
     /** What Moyna says when the bus tile is tapped. */
     fun sentence(): String = stops.joinToString(" ") { (line, _) ->
-        val a = next[line]; val name = spokenLine(line)
+        val a = next[line]?.firstOrNull(); val name = spokenLine(line)
         when {
             a == null -> "$name এখন আসছে না।"
             a.atTerminal && a.departsIn > 0 -> "$name এখনো স্টেশনে আছে, ${HubData.bn(a.departsIn)} মিনিট পরে ছাড়ার কথা।"
@@ -126,25 +128,26 @@ object Bus {
         }
     }
 
-    /** Small text on the bus tile: one line per bus. */
-    fun tileText(): String = stops.joinToString("\n") { (line, _) ->
-        val a = next[line]; val n = line.removePrefix("BX")
+    /** For the bus tile: the next buses of one line as short labels, e.g. ["3 min", "11", "19"]. */
+    fun tileTimes(line: String, english: Boolean): List<String> = (next[line] ?: emptyList()).mapIndexed { i, a ->
+        val n = if (english) a.minutes.toString() else HubData.bn(a.minutes)
         when {
-            a == null -> "$n: —"
-            a.atTerminal -> "$n: ${HubData.bn(a.minutes)} মি ⏳"
-            a.minutes <= 0 -> "$n: এখন"
-            else -> "$n: ${HubData.bn(a.minutes)} মি"
+            i == 0 && a.minutes <= 0 && !a.atTerminal -> if (english) "Now" else "এখন"
+            i == 0 -> "$n ${if (english) "min" else "মি"}${if (a.atTerminal) " ⏳" else ""}"
+            else -> n
         }
     }
 
     /** The same facts in English, for Gemini when she asks about the bus by voice. */
     fun facts(): String = stops.joinToString(" ") { (line, _) ->
-        val a = next[line]
+        val all = next[line] ?: emptyList()
+        val a = all.firstOrNull()
+        val later = all.drop(1).joinToString(" and ") { "${it.minutes}" }
         when {
             a == null -> "$line: no bus coming soon."
             a.atTerminal -> "$line: still at the terminal, scheduled to leave in ${a.departsIn} minutes, at her stop in about ${a.minutes} minutes."
             else -> "$line: arrives at her stop in ${a.minutes} minutes."
-        }
+        } + if (later.isNotEmpty()) " After that: in $later minutes." else ""
     }
 }
 
@@ -329,13 +332,15 @@ object Prayer {
         return "এখন এশা চলছে। পরের নামাজ কাল ফজর, ${at(tomorrow.fajr)}।"
     }
 
-    /** Small text on the prayer tile: the next prayer and its time. */
-    fun tileText(now: LocalDateTime = LocalDateTime.now()): String {
-        val today = day(now.toLocalDate()) ?: return ""
+    /** For the prayer tile: the next prayer and its time, e.g. "Asr" and "2:56 PM" (or in Bengali). */
+    fun tileText(english: Boolean, now: LocalDateTime = LocalDateTime.now()): Pair<String, String>? {
+        val today = day(now.toLocalDate()) ?: return null
         val next = today.prayers().firstOrNull { it.third.isAfter(now.toLocalTime()) }
-            ?: day(today.date.plusDays(1))?.prayers()?.first() ?: return ""
+            ?: day(today.date.plusDays(1))?.prayers()?.first() ?: return null
         val h = if (next.third.hour % 12 == 0) 12 else next.third.hour % 12
-        return "${next.second} ${HubData.bn(h)}:${HubData.bn(next.third.minute).padStart(2, '০')}${if (today.calculated) "*" else ""}"
+        val star = if (today.calculated) "*" else ""
+        return if (english) next.first.replaceFirstChar { it.uppercase() } to "$h:${"%02d".format(next.third.minute)} ${if (next.third.hour < 12) "AM" else "PM"}$star"
+        else next.second to "${HubData.bn(h)}:${HubData.bn(next.third.minute).padStart(2, '০')}$star"
     }
 
     /** Today's times in English, for Gemini when she asks by voice. */
