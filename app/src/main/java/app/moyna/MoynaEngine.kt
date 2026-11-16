@@ -42,7 +42,7 @@ class MoynaEngine(
                     if (state == MoynaState.SPEAKING && !nameFirst) Log.i(tag, "ignored $word: Moyna was talking and no name before it")
                     else stopConversation("voice: $word")
                 }
-                mode == Listen.WAKE && client == null && (state == MoynaState.IDLE || state == MoynaState.ERROR) ->
+                (mode == Listen.WAKE || mode == Listen.WAKE_TV) && client == null && (state == MoynaState.IDLE || state == MoynaState.ERROR) ->
                     startConversation("wake:$word")
             }
         }
@@ -348,7 +348,8 @@ class MoynaEngine(
         if (loud) soundCount++
         soundIndex = (soundIndex + 1) % soundWindow.size
         val share = soundCount.toDouble() / soundWindow.size
-        val next = if (tvMode) share >= MoynaConfig.TV_MODE_OFF else share > MoynaConfig.TV_MODE_ON
+        val next = MoynaConfig.TV_MODE_ENABLED &&
+            (if (tvMode) share >= MoynaConfig.TV_MODE_OFF else share > MoynaConfig.TV_MODE_ON)
         if (next != tvMode) {
             tvMode = next
             Log.i(tag, "TV mode ${if (tvMode) "ON" else "OFF"} (sound in ${(share * 100).toInt()}% of the last 30 s)")
@@ -504,8 +505,9 @@ class MoynaEngine(
     }
 
     /** Record [seconds] of microphone audio to [file]. If [prompts] > 0, beep that many times, 6 s apart. */
-    fun startTest(seconds: Int, file: java.io.File, prompts: Int = 0) = main.post {
+    fun startTest(seconds: Int, file: java.io.File, prompts: Int = 0, micSource: Int = 0) = main.post {
         if (client != null) endConversation(playEndChime = false)
+        if (micSource > 0) { mic.idleSource = micSource; mic.start(echoCancel = false) }   // try another mic source
         testOut?.close()
         testOut = java.io.BufferedOutputStream(java.io.FileOutputStream(file))
         testHits = 0; testBytes = 0; promptsDone = 0; testPrompts = prompts

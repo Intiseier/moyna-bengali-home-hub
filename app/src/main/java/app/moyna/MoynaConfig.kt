@@ -54,6 +54,10 @@ object MoynaConfig {
     // OFF since v2: knocks on the table next to the phone were loud enough to cut her off.
     const val BARGE_IN_LOUDNESS = 0
 
+    // Microphone source while waiting for "Moyna" (Android MediaRecorder.AudioSource number):
+    // 6 = VOICE_RECOGNITION, 1 = MIC, 5 = CAMCORDER, 9 = UNPROCESSED.
+    const val WAKE_MIC_SOURCE = 6
+
     // ---- Wake word ("Moyna") tuning ----
     // The spellings and their sensitivity (#threshold) are in app/src/main/assets/kws/:
     //   wake.txt     used when the room is quiet
@@ -64,6 +68,10 @@ object MoynaConfig {
     const val WAKE_BOOST = 2.0f
 
     // ---- TV mode ----
+    // OFF since v2. On 16 Nov 2026 the logs showed ordinary talking in the room switched it on
+    // 4 times in 25 minutes, and (a v1 bug, now fixed) a "Moyna" heard in TV mode was ignored.
+    // false = always use wake.txt. Turn back on only if the TV causes false wake-ups.
+    const val TV_MODE_ENABLED = false
     // While waiting, Moyna checks how much of the last 30 seconds had sound in it.
     // A 0.1 s moment counts as "sound" if it is louder than this:
     const val TV_SOUND_LOUDNESS = 200

@@ -143,10 +143,11 @@ class MainActivity : Activity() {
         }
         val secs = intent?.getIntExtra("test_seconds", 0) ?: 0
         val prompts = intent?.getIntExtra("test_prompts", 0) ?: 0
+        val src = intent?.getIntExtra("mic_source", 0) ?: 0   // optional: try another microphone source
         if (secs > 0 || prompts > 0) {
             intent?.removeExtra("test_seconds"); intent?.removeExtra("test_prompts")
             root.postDelayed({
-                MoynaHub.engine?.startTest(secs, java.io.File(getExternalFilesDir(null), "wake-test.pcm"), prompts)
+                MoynaHub.engine?.startTest(secs, java.io.File(getExternalFilesDir(null), "wake-test.pcm"), prompts, src)
             }, 500)
         }
     }

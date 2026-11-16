@@ -82,11 +82,16 @@ class MicStreamer(private val onChunk: (ByteArray, Int) -> Unit) {
     /** Whether the current recording uses the phone's echo canceller. */
     @Volatile var echoCancelling = false
         private set
+    /** Which Android microphone "source" to use while waiting for "Moyna" (they differ in clean-up). */
+    @Volatile var idleSource = MoynaConfig.WAKE_MIC_SOURCE
+    private var runningSource = -1
 
     /** Start (or keep) recording. [echoCancel] = filter Moyna's own voice out of the mic. */
     @SuppressLint("MissingPermission")
     fun start(echoCancel: Boolean = false) {
-        if (running && echoCancel == echoCancelling) return
+        val source = if (echoCancel) MediaRecorder.AudioSource.VOICE_COMMUNICATION else idleSource
+        if (running && echoCancel == echoCancelling && source == runningSource) return
+        runningSource = source
         if (running) { running = false }    // switching mode: restart the recording
         worker?.join(800)   // let a previous recording fully release the microphone
         running = true
@@ -96,8 +101,6 @@ class MicStreamer(private val onChunk: (ByteArray, Int) -> Unit) {
             val chunk = 3200 // 100 ms
             val bufSize = max(AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT), chunk * 4)
-            val source = if (echoCancel) MediaRecorder.AudioSource.VOICE_COMMUNICATION
-                         else MediaRecorder.AudioSource.VOICE_RECOGNITION
             var rec = AudioRecord(source, rate,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize)
             var aec: android.media.audiofx.AcousticEchoCanceler? = null
@@ -105,7 +108,7 @@ class MicStreamer(private val onChunk: (ByteArray, Int) -> Unit) {
                 android.media.audiofx.AcousticEchoCanceler.isAvailable()) {
                 aec = android.media.audiofx.AcousticEchoCanceler.create(rec.audioSessionId)?.apply { enabled = true }
             }
-            Log.i("Moyna", "mic started: ${if (echoCancel) "VOICE_COMMUNICATION, echo canceller=${aec?.enabled}" else "VOICE_RECOGNITION"}")
+            Log.i("Moyna", "mic started: ${if (echoCancel) "VOICE_COMMUNICATION, echo canceller=${aec?.enabled}" else "source $source"}")
             if (rec.state != AudioRecord.STATE_INITIALIZED) {
                 rec.release()
                 rec = AudioRecord(MediaRecorder.AudioSource.MIC, rate,
