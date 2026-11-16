@@ -8,15 +8,17 @@ They say *"Moyna"*, hear a chime, ask anything out loud in Bengali (or English),
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE) ![Android 11+](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white) ![Works on 32-bit phones](https://img.shields.io/badge/works%20on-old%2032--bit%20phones-blue) ![Gemini Live API](https://img.shields.io/badge/Gemini%20Live%20API-free%20tier-8E75B2) ![Language](https://img.shields.io/badge/speaks-Bengali%20%7C%20English-orange)
 
 <p align="center">
-  <img src="docs/screenshots/hub.png" width="200" alt="Home hub: clock, Bangladesh time, live bus times, next prayer, talk and quiet buttons, weather for the next 7 hours">
+  <img src="docs/screenshots/hub.png" width="170" alt="Home hub: clock, Bangladesh time, live bus times, next prayer, talk and quiet buttons, weather for the next 7 hours">
   &nbsp;
-  <img src="docs/screenshots/listening.png" width="200" alt="Listening screen after someone says Moyna">
+  <img src="docs/screenshots/hub-bn.png" width="170" alt="The same home hub with the words switched to Bengali">
   &nbsp;
-  <img src="docs/screenshots/speaking.png" width="200" alt="Moyna is speaking, with a big red stop button">
+  <img src="docs/screenshots/listening.png" width="170" alt="Listening screen after someone says Moyna">
   &nbsp;
-  <img src="docs/screenshots/night.png" width="200" alt="Night look: black screen with a faint clock">
+  <img src="docs/screenshots/speaking.png" width="170" alt="Moyna is speaking, with a big red stop button">
+  &nbsp;
+  <img src="docs/screenshots/night.png" width="170" alt="Night look: black screen with a faint clock">
 </p>
-<p align="center"><sub>The hub on the wall, listening, speaking, and the night look. (The bus lines shown are stand-ins from a public stop, not ours.)</sub></p>
+<p align="center"><sub>The hub in English and in Bengali (one switch in the admin screen), listening, speaking, and the night look. (The bus lines shown are stand-ins from a public stop, not ours.)</sub></p>
 
 **This page has two parts:**
 
@@ -49,7 +51,7 @@ A budget phone on the living room wall, always plugged in, locked to this one ap
 
 - 🗣️ **Bengali conversation, kept short.** Real-time speech in, speech out (Gemini Live native audio). Moyna answers in one or two plain sentences of spoken Bangladeshi Bengali (or English if spoken to in English), with no small talk and no questions back. A conversation ends by itself after 3 answers.
 - 🐦 **Wake word "Moyna", fully on the phone.** Offline keyword spotting with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). **Nothing leaves the phone until after the chime.** No account, no trial, no wake-word license. It works best within a few feet of the phone; from across a room, tap the 🎤 tile instead.
-- 🏠 **A home hub on the wall.** A large clock with the date and Bangladesh time, big tiles with an emoji and a Bengali label, and a weather strip showing now and the next 7 hours. It dims when idle, and from 11 PM to 4 AM it goes black with a faint clock (a tap lights it up).
+- 🏠 **A home hub on the wall.** A large clock with the date and Bangladesh time, big tiles with an emoji and a few words (English or Bengali, switched in the admin screen), live bus times for two lines, and a weather strip showing now and the next 7 hours. It dims when idle, and from 11 PM to 4 AM it goes black with a faint clock (a tap lights it up).
 - 🚌 **Bus tile.** Live arrival times for your own stops (MTA Bus Time, New York), shown on the tile and spoken on a tap, about a second later.
 - 🕌 **Prayer times and azan.** Times come from your own mosque calendar (typed into a small file), or are calculated when there is no file. The azan plays quietly at each prayer time; each prayer can be switched off.
 - 🌦️ **Weather.** From Open-Meteo (free, no key). A tap says how it feels and whether rain or snow is coming in the next 12 hours.
@@ -58,7 +60,7 @@ A budget phone on the living room wall, always plugged in, locked to this one ap
 - 😴 **Quiet.** The quiet tile, or *"be quiet for an hour"*, makes her ignore her name for a while. The screen says so, and a tap wakes her.
 - 🧭 **Spoken commands.** *"Louder / quieter"*, *"thank you, that's all"*, *"what time is it?"* (she knows the real time here and in Bangladesh).
 - 🩺 **Health-safe answers.** General information only, never doses or diagnoses, always "ask your doctor or *(someone you choose)*", and an urgent-symptoms rule to call the emergency number.
-- 🔒 **Kiosk mode and a hidden admin screen.** Optional: lock the phone to Moyna so it can't be left by accident. Holding the clock for 10 seconds and entering a PIN opens an admin screen with today's activity, azan switches and "exit kiosk".
+- 🔒 **Kiosk mode and a hidden admin screen.** Optional: lock the phone to Moyna so it can't be left by accident. Holding the clock for 10 seconds and entering a PIN opens an admin screen with today's activity, azan switches, the English/Bengali switch and "exit kiosk".
 - 📒 **Events log.** Every wake-up, question (text only, never audio), answer, tile tap and problem is written to a private log on the phone, with a script for a weekly summary.
 - 🔌 **Appliance-grade reliability.** Runs as a foreground service, starts by itself after a reboot, survives Wi-Fi drops, and plays a pre-recorded Bengali *"the internet isn't working"* message when offline.
 
@@ -81,6 +83,23 @@ flowchart LR
 - **Tiles speak through a one-sentence Live session.** The app builds the Bengali sentence itself from fresh data and asks Gemini only to read it aloud, which starts about a second after the tap.
 - **Look-ups use a second model.** On the free tier, Google Search only works with the older Live model, so the main model calls a `look_up` tool and the app asks the search-capable model in the background. That model also speaks its answer; the app stops as soon as the words are complete instead of waiting for the speech to finish, which cut look-ups from about 15 seconds to 4 to 9.
 - **32-bit friendly.** The app ships only armeabi-v7a native code. The sherpa-onnx int8/"mobile" models hang on 32-bit ARM, so full-precision ones are used.
+
+## Lessons from real-world testing
+
+| Problem we hit | What fixed it |
+|---|---|
+| The English-spelled wake word "MOYNA" caught **1 of ~10** calls; the model heard *"why not", "my na", "mina"* | A phoneme-based model plus the spellings it actually hears (*moy-na, my-naa*): **15 of 16** caught |
+| sherpa-onnx int8/"mobile" models **hung** on 32-bit ARM | Full-precision chunk-16 models: about 45 ms of work per 100 ms of audio |
+| A "TV mode" with a stricter wake word made Moyna **stop answering**: ordinary talking switched it on, and a bug then ignored her name | Removed in version 2. One wake word list, always |
+| A knock on the table **cut Moyna off** (the "loud voice interrupts" feature) | Removed. Stopping is the red button or a stop word |
+| "Stop" put Moyna to sleep for 2 minutes, so she then **ignored her name** | Stop only ends the conversation; sleep only when asked |
+| Look-ups took **15 seconds** | Stop waiting once the answer text is complete: 4 to 9 seconds |
+| The light sensor made the screen go black whenever something covered it | Night look by the clock (11 PM to 4 AM) |
+| The wake word **cannot hear from across the room** on this phone's microphone (0 of 20 at 7 feet, about 11 of 20 at 2 feet) | A big tap-to-talk tile on the hub |
+| Moyna **stopped herself**, hearing her own voice as "stop" | While she talks, a stop only counts after her name ("Moyna stop") |
+| Gemini **transcribes its own echo**, even through the phone's echo canceller | The mic isn't streamed while Moyna talks; there's a separate on-phone stop listener |
+| The end of the chime counted as "she's talking" | Wait for the speaker's latency before listening |
+| Computer voices played through PC speakers made **useless** wake-word tests | Test with real voices (the beep test) |
 
 # Part 2: Build your own
 
@@ -236,25 +255,9 @@ The log is JSON Lines, one file per day, kept for 60 days in the app's private s
 | `adb shell am start -n app.moyna/.MainActivity --ei test_prompts 20` | **Beep test:** 20 beeps, 6 s apart; say "Moyna" after each. It counts catches and saves the recording for offline tuning. |
 | `adb shell am start -n app.moyna/.MainActivity --ez echo_test true` | **Echo test:** measures how much of Moyna's own voice the mic hears, with and without echo cancellation. |
 | `adb shell am start -n app.moyna/.MainActivity --es look night` | Force the **night look** (`day` for the day look, `auto` to go back to the clock). |
+| `adb shell am start -n app.moyna/.MainActivity --es lang bn` | Switch the words on the screen to **Bengali** (`en` for English). |
 | `adb shell am start -n app.moyna/.MainActivity --es azan test` | Play the azan now. |
 | `adb logcat -s Moyna` | Live log: wake-ups, what Gemini heard and said, commands, tiles, errors. |
-
-## Lessons from real-world testing
-
-| Problem we hit | What fixed it |
-|---|---|
-| The English-spelled wake word "MOYNA" caught **1 of ~10** calls; the model heard *"why not", "my na", "mina"* | A phoneme-based model plus the spellings it actually hears (*moy-na, my-naa*): **15 of 16** caught |
-| sherpa-onnx int8/"mobile" models **hung** on 32-bit ARM | Full-precision chunk-16 models: about 45 ms of work per 100 ms of audio |
-| A "TV mode" with a stricter wake word made Moyna **stop answering**: ordinary talking switched it on, and a bug then ignored her name | Removed in version 2. One wake word list, always |
-| A knock on the table **cut Moyna off** (the "loud voice interrupts" feature) | Removed. Stopping is the red button or a stop word |
-| "Stop" put Moyna to sleep for 2 minutes, so she then **ignored her name** | Stop only ends the conversation; sleep only when asked |
-| Look-ups took **15 seconds** | Stop waiting once the answer text is complete: 4 to 9 seconds |
-| The light sensor made the screen go black whenever something covered it | Night look by the clock (11 PM to 4 AM) |
-| The wake word **cannot hear from across the room** on this phone's microphone (0 of 20 at 7 feet, about 11 of 20 at 2 feet) | A big tap-to-talk tile on the hub |
-| Moyna **stopped herself**, hearing her own voice as "stop" | While she talks, a stop only counts after her name ("Moyna stop") |
-| Gemini **transcribes its own echo**, even through the phone's echo canceller | The mic isn't streamed while Moyna talks; there's a separate on-phone stop listener |
-| The end of the chime counted as "she's talking" | Wait for the speaker's latency before listening |
-| Computer voices played through PC speakers made **useless** wake-word tests | Test with real voices (the beep test) |
 
 ## Costs, limits and privacy
 

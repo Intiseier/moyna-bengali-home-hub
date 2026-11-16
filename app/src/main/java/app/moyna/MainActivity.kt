@@ -576,6 +576,12 @@ class MainActivity : Activity() {
             if (it == "night") lastTouch = 0
             root.post { applyLook() }
         }
+        // --es lang bn|en : switch the words on the screen (same as the admin screen switch).
+        intent?.getStringExtra("lang")?.let {
+            intent.removeExtra("lang")
+            getSharedPreferences("moyna", Context.MODE_PRIVATE).edit().putString("ui_lang", if (it == "bn") "bn" else "en").apply()
+            root.post { show(state, detail); fillTiles() }
+        }
         // --es azan test : play the azan now.   --ez admin true : open the admin screen (asks for the PIN).
         intent?.getStringExtra("azan")?.let { intent.removeExtra("azan"); MoynaHub.engine?.playAzan(it) }
         if (intent?.getBooleanExtra("admin", false) == true) { intent.removeExtra("admin"); root.post { askPin() } }
