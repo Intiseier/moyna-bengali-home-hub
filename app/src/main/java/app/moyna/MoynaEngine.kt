@@ -39,10 +39,10 @@ class MoynaEngine(
                     // stop word. Then only "Moyna ... stop" counts (her name within the last 2.5 s).
                     val nameFirst = word.startsWith("STOP_NAME") ||
                         SystemClock.elapsedRealtime() - lastNameAt < 2_500
-                    if (state == MoynaState.SPEAKING && !nameFirst) Log.i(tag, "ignored $word: Moyna was talking and no name before it")
+                    if ((state == MoynaState.SPEAKING || lookingUp) && !nameFirst) Log.i(tag, "ignored $word: Moyna was talking and no name before it")
                     else stopConversation("voice: $word")
                 }
-                (mode == Listen.WAKE || mode == Listen.WAKE_TV) && client == null && (state == MoynaState.IDLE || state == MoynaState.ERROR) ->
+                mode == Listen.WAKE && client == null && (state == MoynaState.IDLE || state == MoynaState.ERROR) ->
                     startConversation("wake:$word")
             }
         }
@@ -67,6 +67,25 @@ class MoynaEngine(
     private var followUpDeadline = 0L       // loud noise can't push the follow-up window past this
     private var silentChunks = 0            // microphone delivering pure silence (blocked by Android?)
     private val bargeIn = ArrayList<ByteArray>()  // loud chunks heard while Moyna talks
+
+    private var exchanges = 0               // answers Moyna has given in this conversation
+    private var lookingUp = false           // a look_up is running: play the "searching" sounds, mute the mic to Gemini
+
+    // While a look-up runs: a soft tick every 1.2 s, and one "please wait a bit more" after 8 s.
+    private val lookupTick = object : Runnable {
+        override fun run() {
+            if (!lookingUp) return
+            if (player.isIdle()) player.play(Sounds.tick)
+            main.postDelayed(this, 1200)
+        }
+    }
+    private val lookupSlow = Runnable {
+        if (lookingUp) { Log.i(tag, "look-up is slow; asking her to wait"); Clips.get(context, "waiting")?.let { player.play(it) } }
+    }
+    private fun stopLookupSounds() {
+        lookingUp = false
+        main.removeCallbacks(lookupTick); main.removeCallbacks(lookupSlow)
+    }
 
     private val giveUp = Runnable { endConversation(playEndChime = true) }
 
@@ -149,7 +168,7 @@ class MoynaEngine(
     /** End any conversation right away, say "ঠিক আছে, আমি একটু চুপ থাকছি", and ignore "Moyna" for a while. */
     private fun stopAndSleep(minutes: Int, why: String) {
         Log.i(tag, "stop + sleep $minutes min ($why)")
-        main.removeCallbacks(giveUp)
+        main.removeCallbacks(giveUp); stopLookupSounds()
         val c = client
         client = null
         session++
@@ -204,7 +223,7 @@ class MoynaEngine(
 
         session++
         ready = false; retried = false; pending.clear(); heardSpeech = false; gotWordsThisTurn = false
-        modelTurnOpen = false; dropRestOfAnswer = false
+        modelTurnOpen = false; dropRestOfAnswer = false; exchanges = 0
 
         connect()
         talkStartedAt = SystemClock.elapsedRealtime()
@@ -225,7 +244,7 @@ class MoynaEngine(
     }
 
     private fun endConversation(playEndChime: Boolean) {
-        main.removeCallbacks(giveUp)
+        main.removeCallbacks(giveUp); stopLookupSounds()
         val c = client
         client = null
         session++                          // ignore any late messages from the old conversation
@@ -249,6 +268,10 @@ class MoynaEngine(
         val now = SystemClock.elapsedRealtime()
         if (now - conversationStartedAt > MoynaConfig.MAX_CONVERSATION_SECONDS * 1000L) {
             Log.i(tag, "conversation reached its maximum length")
+            endConversation(playEndChime = true); return
+        }
+        if (exchanges >= MoynaConfig.MAX_EXCHANGES) {
+            Log.i(tag, "conversation reached ${MoynaConfig.MAX_EXCHANGES} answers; ending")
             endConversation(playEndChime = true); return
         }
         heardSpeech = false; gotWordsThisTurn = false
@@ -277,13 +300,13 @@ class MoynaEngine(
         val c = client
         if (c == null) {                          // waiting: only the on-phone wake word hears this
             if (state == MoynaState.IDLE || state == MoynaState.ERROR) {
-                updateTvMode(rms)
-                wake.feed(pcm, if (tvMode) Listen.WAKE_TV else Listen.WAKE)
+                wake.feed(pcm, Listen.WAKE)
             }
             return
         }
         // In a conversation, the on-phone listener hears stop words, even while Moyna is talking.
         wake.feed(pcm, Listen.COMMAND)
+        if (lookingUp) return                     // Gemini must not hear the "searching" clip and ticks
         if (state == MoynaState.SPEAKING) {       // don't send Moyna's own voice back to Gemini...
             // ...but a loud voice near the phone (far above her filtered echo) interrupts her.
             if (mic.echoCancelling && MoynaConfig.BARGE_IN_LOUDNESS > 0 && rms > MoynaConfig.BARGE_IN_LOUDNESS) {
@@ -319,44 +342,6 @@ class MoynaEngine(
         if (ready) c.sendAudio(pcm) else pending.add(pcm)
     }
 
-    // ---------- TV mode: stricter wake word while the room is noisy ----------
-
-    private val soundWindow = BooleanArray(300)   // last 30 s, one entry per 0.1 s
-    private var soundIndex = 0
-    private var soundCount = 0
-    private var tvMode = false
-
-    // Room loudness report every 5 minutes while waiting, to tune TV mode from real numbers.
-    private val roomRms = IntArray(3000)
-    private var roomCount = 0
-
-    private fun noteRoomLoudness(rms: Int) {
-        roomRms[roomCount++] = rms
-        if (roomCount < roomRms.size) return
-        roomRms.sort()
-        val over = roomRms.count { it > MoynaConfig.TV_SOUND_LOUDNESS } * 100 / roomRms.size
-        Log.i(tag, "room loudness (5 min): quiet ${roomRms[300]}, middle ${roomRms[1500]}, loud ${roomRms[2700]}, " +
-            "max ${roomRms[2999]}; $over% above ${MoynaConfig.TV_SOUND_LOUDNESS}; TV mode ${if (tvMode) "on" else "off"}")
-        roomCount = 0
-    }
-
-    private fun updateTvMode(rms: Int) {
-        noteRoomLoudness(rms)
-        val loud = rms > MoynaConfig.TV_SOUND_LOUDNESS
-        if (soundWindow[soundIndex]) soundCount--
-        soundWindow[soundIndex] = loud
-        if (loud) soundCount++
-        soundIndex = (soundIndex + 1) % soundWindow.size
-        val share = soundCount.toDouble() / soundWindow.size
-        val next = MoynaConfig.TV_MODE_ENABLED &&
-            (if (tvMode) share >= MoynaConfig.TV_MODE_OFF else share > MoynaConfig.TV_MODE_ON)
-        if (next != tvMode) {
-            tvMode = next
-            Log.i(tag, "TV mode ${if (tvMode) "ON" else "OFF"} (sound in ${(share * 100).toInt()}% of the last 30 s)")
-            if (state == MoynaState.IDLE) setState(MoynaState.IDLE)   // refresh the hint on screen
-        }
-    }
-
     // ---------- messages from Gemini ----------
 
     private fun listenerFor(mySession: Int) = object : GeminiLiveClient.Listener {
@@ -370,6 +355,7 @@ class MoynaEngine(
 
         override fun onAudio(pcm24k: ByteArray) = onMain {
             modelTurnOpen = true
+            if (lookingUp) { stopLookupSounds(); player.stopNow() }   // the answer is ready
             if (dropRestOfAnswer) return@onMain
             if (state != MoynaState.SPEAKING) {
                 main.removeCallbacks(giveUp)
@@ -395,11 +381,20 @@ class MoynaEngine(
                 "look_up" -> {
                     val q = args.optString("question")
                     Log.i(tag, "looking up: $q")
-                    setState(MoynaState.THINKING)
-                    armGiveUp(MoynaConfig.ANSWER_TIMEOUT_SECONDS + 10)
-                    LookUp.ask(BuildConfig.GEMINI_API_KEY, q) { answer ->
+                    setState(MoynaState.THINKING, "search")
+                    armGiveUp(MoynaConfig.LOOKUP_TIMEOUT_SECONDS + MoynaConfig.ANSWER_TIMEOUT_SECONDS)
+                    // Say "একটু দেখে নিচ্ছি।" at once, then tick softly until the answer starts.
+                    stopLookupSounds(); lookingUp = true
+                    val clip = Clips.get(context, "searching")
+                    if (clip != null) player.play(clip)
+                    main.postDelayed(lookupTick, (clip?.size ?: 0) / 48L + 400)
+                    main.postDelayed(lookupSlow, MoynaConfig.LOOKUP_WAIT_CLIP_SECONDS * 1000L)
+                    val asked = SystemClock.elapsedRealtime()
+                    LookUp.ask(BuildConfig.GEMINI_API_KEY, q, MoynaConfig.LOOKUP_TIMEOUT_SECONDS * 1000L) { answer ->
                         main.post {
+                            Log.i(tag, "look-up took ${(SystemClock.elapsedRealtime() - asked) / 100 / 10.0} s")
                             if (session != mySession) return@post
+                            main.removeCallbacks(lookupSlow)
                             client?.sendToolResponse(id, name, answer ?: "Could not look it up right now (no answer).")
                         }
                     }
@@ -410,6 +405,8 @@ class MoynaEngine(
 
         override fun onTurnComplete() = onMain {
             modelTurnOpen = false
+            stopLookupSounds()
+            if (state == MoynaState.SPEAKING) exchanges++
             if (dropRestOfAnswer) { dropRestOfAnswer = false; return@onMain }
             if (state == MoynaState.SPEAKING) waitUntilPlayedThen(mySession) { afterAnswer() }
             else afterAnswer()   // Gemini chose not to answer (e.g. it was just noise)
@@ -452,7 +449,7 @@ class MoynaEngine(
 
     /** Say a short Bengali message (recorded in advance, works offline) and show it on screen. */
     private fun fail(clip: String, screenText: String) {
-        main.removeCallbacks(giveUp)
+        main.removeCallbacks(giveUp); stopLookupSounds()
         val c = client; client = null; c?.close()
         session++
         ready = false; pending.clear()
@@ -526,12 +523,6 @@ class MoynaEngine(
         onState(MoynaState.TEST, "${prompt}বাকি $left সেকেন্ড\nশুনেছি $testHits বার")
     }
 
-    /** Test helper (from the PC): play echo-play.pcm through the speaker while Moyna waits, like a TV. */
-    fun playLikeTv(dir: java.io.File) = main.post {
-        val f = java.io.File(dir, "echo-play.pcm")
-        if (f.exists() && client == null) { Log.i(tag, "TV TEST: playing ${f.length() / 48000}s"); player.play(f.readBytes()) }
-    }
-
     // ---------- echo test (started from the PC) ----------
     // Plays one of Moyna's recorded sentences while recording, once with the normal mic and once
     // with the echo canceller, so we can measure how much of her own voice the mic still hears.
@@ -570,7 +561,7 @@ class MoynaEngine(
     private fun setState(s: MoynaState, detail: String? = null) {
         if (s != state) Log.i(tag, "state: $state -> $s")
         state = s
-        onState(s, if (s == MoynaState.IDLE && detail == null && tvMode) "tv" else detail)
+        onState(s, detail)
     }
 
     companion object {

@@ -48,8 +48,9 @@ object LookUp {
                     .put("model", MoynaConfig.LOOKUP_MODEL)
                     .put("generationConfig", JSONObject().put("responseModalities", JSONArray().put("AUDIO")))
                     .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text",
-                        "You answer factual questions using Google Search. Always search first. Answer in plain " +
-                        "English in at most 3 short sentences with the key facts (numbers, names, dates, times)."))))
+                        "You answer factual questions using Google Search. Always search first. Reply in plain " +
+                        "English with ONLY the facts needed to answer the question, in one or two short " +
+                        "sentences (numbers, names, dates, times). No background, no extra details, no advice."))))
                     .put("tools", JSONArray().put(JSONObject().put("googleSearch", JSONObject())))
                     .put("outputAudioTranscription", JSONObject()))
                 webSocket.send(setup.toString())

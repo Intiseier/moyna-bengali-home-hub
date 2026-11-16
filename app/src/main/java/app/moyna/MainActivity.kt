@@ -131,11 +131,6 @@ class MainActivity : Activity() {
     // Wake word test, started from the PC (see README):
     //   adb shell am start -n app.moyna/.MainActivity --ei test_prompts 20
     private fun handleTestIntent(intent: Intent?) {
-        if (intent?.getBooleanExtra("tv_test", false) == true) {
-            intent.removeExtra("tv_test")
-            MoynaHub.engine?.playLikeTv(getExternalFilesDir(null)!!)
-            return
-        }
         if (intent?.getBooleanExtra("echo_test", false) == true) {
             intent.removeExtra("echo_test")
             root.postDelayed({ MoynaHub.engine?.echoTest(getExternalFilesDir(null)!!) }, 500)
@@ -154,11 +149,9 @@ class MainActivity : Activity() {
 
     private fun show(s: MoynaState, detail: String?) {
         val (bigText, smallText, color) = when (s) {
-            MoynaState.IDLE -> Triple("ময়না শুনছে না",
-                if (detail == "tv") "টিভির শব্দ বেশি —\nএকটু জোরে \"ময়না\" ডাকুন\nবা স্ক্রিনে ছুঁয়ে দিন"   // TV is loud: call a bit louder
-                else "\"ময়না\" বলে ডাকুন\nবা স্ক্রিনে ছুঁয়ে দিন", Color.rgb(25, 55, 50))
+            MoynaState.IDLE -> Triple("ময়না শুনছে না", "\"ময়না\" বলে ডাকুন\nবা স্ক্রিনে ছুঁয়ে দিন", Color.rgb(25, 55, 50))
             MoynaState.LISTENING -> Triple("বলুন...", "ময়না শুনছে", Color.rgb(20, 110, 70))
-            MoynaState.THINKING -> Triple("একটু ভাবছি...", "", Color.rgb(150, 100, 20))
+            MoynaState.THINKING -> Triple(if (detail == "search") "একটু দেখে নিচ্ছি..." else "একটু ভাবছি...", "", Color.rgb(150, 100, 20))
             MoynaState.SPEAKING -> Triple("ময়না বলছে...", "\"ময়না থামো\" বলুন বা লাল বোতাম চাপুন", Color.rgb(30, 80, 150))
             MoynaState.ERROR -> Triple(detail ?: "সমস্যা হয়েছে", "আবার চেষ্টা করতে ছুঁয়ে দিন", Color.rgb(140, 40, 40))
             MoynaState.SLEEPING -> Triple("ময়না ঘুমাচ্ছে", "ছুঁয়ে জাগান\n\n${detail ?: ""}", Color.rgb(35, 35, 55))

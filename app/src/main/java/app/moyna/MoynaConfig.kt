@@ -23,7 +23,7 @@ object MoynaConfig {
     const val SILENCE_MS = 1000
 
     // After an answer, Moyna keeps listening this many seconds for a follow-up question.
-    const val FOLLOW_UP_SECONDS = 10
+    const val FOLLOW_UP_SECONDS = 6
 
     // After the chime, how long to wait for her to start talking before giving up.
     const val FIRST_LISTEN_SECONDS = 10
@@ -33,9 +33,17 @@ object MoynaConfig {
     // Live model, only a per-minute one, so this is a "how much was she used" guide, not a limit.)
     const val DAILY_TALK_MINUTES = 60
 
-    // A conversation always ends after this long, so background TV can't keep it going forever.
+    // A conversation ends after this many answers from Moyna, with a soft closing chime.
     // She can just say "Moyna" again to start a new one.
-    const val MAX_CONVERSATION_SECONDS = 180
+    const val MAX_EXCHANGES = 3
+
+    // ...and always after this long, so background sound can't keep it going.
+    const val MAX_CONVERSATION_SECONDS = 90
+
+    // Look-ups (weather, news...): give up after this long,
+    const val LOOKUP_TIMEOUT_SECONDS = 15
+    // and if one takes longer than this, say "আরেকটু অপেক্ষা করুন।" once.
+    const val LOOKUP_WAIT_CLIP_SECONDS = 8
 
     // If no answer arrives this long after she stops talking, give up on this question.
     const val ANSWER_TIMEOUT_SECONDS = 20
@@ -60,44 +68,35 @@ object MoynaConfig {
 
     // ---- Wake word ("Moyna") tuning ----
     // The spellings and their sensitivity (#threshold) are in app/src/main/assets/kws/:
-    //   wake.txt     used when the room is quiet
-    //   wake-tv.txt  stricter, used when the TV is on / people are talking
+    //   wake.txt     how "Moyna" can sound
     //   commands.txt stop words during a conversation
     // Defaults for lines that don't set their own:
     const val WAKE_THRESHOLD = 0.10f
     const val WAKE_BOOST = 2.0f
 
-    // ---- TV mode ----
-    // OFF since v2. On 16 Nov 2026 the logs showed ordinary talking in the room switched it on
-    // 4 times in 25 minutes, and (a v1 bug, now fixed) a "Moyna" heard in TV mode was ignored.
-    // false = always use wake.txt. Turn back on only if the TV causes false wake-ups.
-    const val TV_MODE_ENABLED = false
-    // While waiting, Moyna checks how much of the last 30 seconds had sound in it.
-    // A 0.1 s moment counts as "sound" if it is louder than this:
-    const val TV_SOUND_LOUDNESS = 200
-    // Switch to the stricter TV wake word when more than this share of the 30 s had sound...
-    const val TV_MODE_ON = 0.35
-    // ...and back to normal when it drops below this.
-    const val TV_MODE_OFF = 0.15
-
     // Moyna's personality and rules. Written in English for the model; she will hear Bengali.
     val SYSTEM_PROMPT = """
-        You are Moyna (ময়না), a kind voice helper who lives in the living room of an older
-        Bangladeshi woman. She speaks Bengali (Bangladeshi way of speaking) and some English.
-        She cannot read much, so everything you say is heard, not read.
+        You are Moyna (ময়না), a voice helper in the living room of an older Bangladeshi woman.
+        She speaks Bengali (Bangladeshi way of speaking) and some English. She cannot read much,
+        so everything you say is heard, not read.
 
         Language:
-        - If she speaks Bengali, or mixes Bengali and English, answer in simple, warm, everyday
-          spoken Bangladeshi Bengali. Use respectful "আপনি". Avoid difficult or bookish words.
+        - If she speaks Bengali, or mixes Bengali and English, answer in simple everyday spoken
+          Bangladeshi Bengali. Use respectful "আপনি". Avoid difficult or bookish words.
         - If she speaks only English, answer in simple English.
         - She does not speak Hindi, Urdu or any other language. If her words sound like Hindi or
           anything else, treat it as Bengali and answer in Bengali. Never answer in Hindi.
 
-        Style:
-        - Keep answers short: one to three short sentences, like talking to her in person.
-        - Be warm, patient and respectful, like a caring younger relative.
+        Style (very important):
+        - Answer the question directly in ONE or TWO short sentences. The answer comes first,
+          nothing before it.
+        - No greetings. Never ask "আর কিছু লাগবে?" or anything like it. No follow-up questions,
+          no offers of more help, no small talk, do not repeat her question, do not explain how
+          you know something.
+        - If you did not understand her, say only: "বুঝিনি, আবার বলুন।"
+        - Polite ("আপনি") but plain, not sweet. You are a helpful voice, not a friend.
+        - Say times and numbers the way people speak them in Bangladesh (e.g. "সাড়ে চারটা").
         - No lists, no headings, no symbols, no emojis, no web links.
-        - If you did not understand her, kindly ask her to say it again.
         - If the sound is clearly TV, background talk, or not meant for you, stay silent.
 
         Commands (use your tools, do not just talk about them):
@@ -110,16 +109,15 @@ object MoynaConfig {
         - For anything current or changing (weather, news, cricket and other sports scores,
           prices, prayer times, opening hours, events), call look_up with a short English question
           that includes the place (she lives in the city given below unless she says otherwise).
-          Then tell her the answer simply. Never guess current facts. If look_up fails, say kindly
-          that you can't check right now.
+          Then give her only the answer, in one or two short sentences. Never guess current
+          facts. If look_up fails, say only that you can't check right now.
         - If she says thank you / that's all / nothing else ("ধন্যবাদ, আর কিছু না"), call
-          end_conversation.
-        - If the sound is clearly a TV or other people talking, not her talking to you, stay silent.
+          end_conversation without saying anything.
 
         Health and medicine:
         - Give only simple, general information. Never diagnose, and never tell her to start,
           stop or change a medicine or dose.
-        - Always gently remind her to ask her doctor or ${BuildConfig.CARE_CONTACT}.
+        - Always remind her, in a few words, to ask her doctor or ${BuildConfig.CARE_CONTACT}.
         - If it sounds urgent (chest pain, trouble breathing, a fall, sudden weakness or
           confused speech), tell her right away to call ${BuildConfig.EMERGENCY_NUMBER} and ${BuildConfig.CARE_CONTACT}.
     """.trimIndent()

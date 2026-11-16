@@ -178,6 +178,9 @@ object Sounds {
     // (Padded with silence: a sound shorter than the speaker's buffer can sit there unplayed.)
     val prompt: ByteArray by lazy { tones(1200.0 to 90, 0.0 to 410, volume = 0.25) }
 
+    /** Very soft tick, repeated while a look-up is running ("still working"). */
+    val tick: ByteArray by lazy { tones(740.0 to 45, 0.0 to 255, volume = 0.05) }
+
     /** Low double beep for problems. */
     val error: ByteArray by lazy { tones(330.0 to 180, 0.0 to 80, 330.0 to 180, volume = 0.3) }
 }

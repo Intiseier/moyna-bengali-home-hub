@@ -1,6 +1,0 @@
-# How "Moyna" sounds, used when the TV is on / the room is noisy.
-# "my-nuh" (M AY1 N AH0) is left out: on 4.5 minutes of TV-style speech it caused all the false
-# wakes (about 53 per hour); without it there were none, and test calls were caught just as well.
-M OY1 N AH0 :2.0 #0.10 @MOYNA_OY_AH
-M OY1 N AA1 :2.0 #0.10 @MOYNA_OY_AA
-M AY1 N AA1 :2.0 #0.10 @MOYNA_AY_AA

@@ -13,10 +13,8 @@ import kotlin.concurrent.thread
 
 /** What the on-phone listener is listening for right now. */
 enum class Listen(val file: String) {
-    /** Waiting in a quiet room: listen for "Moyna" (assets/kws/wake.txt). */
+    /** Waiting: listen for "Moyna" (assets/kws/wake.txt). */
     WAKE("kws/wake.txt"),
-    /** Waiting while the TV is on / the room is noisy: stricter "Moyna" (assets/kws/wake-tv.txt). */
-    WAKE_TV("kws/wake-tv.txt"),
     /** In a conversation: stop words like "থামো" / "stop" (assets/kws/commands.txt), plus "Moyna". */
     COMMAND("kws/commands.txt"),
 }
@@ -77,12 +75,11 @@ class WakeWord(assets: AssetManager, private val onHeard: (String, Listen) -> Un
             fun read(file: String) = assets.open(file).bufferedReader(Charsets.UTF_8).readLines()
                 .map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
             specs[Listen.WAKE] = read(Listen.WAKE.file).joinToString("/")
-            specs[Listen.WAKE_TV] = read(Listen.WAKE_TV.file).joinToString("/")
             // In a conversation also listen for "Moyna", so "Moyna ... stop" can be recognised.
             specs[Listen.COMMAND] = (read(Listen.COMMAND.file) + read(Listen.WAKE.file)).joinToString("/")
             available = true
-            Log.i(tag, "wake word ready: quiet=${read(Listen.WAKE.file).size} spellings, " +
-                "TV=${read(Listen.WAKE_TV.file).size}, stop words=${read(Listen.COMMAND.file).size}")
+            Log.i(tag, "wake word ready: ${read(Listen.WAKE.file).size} spellings, " +
+                "stop words=${read(Listen.COMMAND.file).size}")
         } catch (t: Throwable) {
             Log.e(tag, "wake word could not start; tap still works", t)
             return
