@@ -109,11 +109,12 @@ object Bus {
         return list
     }
 
-    /** "M15" -> "এম 15" (how a line name is said out loud). */
+    /** "M15" -> "এম 15" (how a line name is said out loud; add your own numbers to the list). */
     private fun spokenLine(line: String): String {
         val words = mapOf("22" to "টুয়েন্টি টু", "36" to "থার্টি সিক্স", "5" to "ফাইভ", "27" to "টুয়েন্টি সেভেন", "39" to "থার্টি নাইন")
-        val num = line.removePrefix("BX")
-        return "বিএক্স " + (words[num] ?: num)
+        val letters = mapOf("BX" to "বিএক্স", "M" to "এম", "Q" to "কিউ", "B" to "বি", "S" to "এস")
+        val prefix = line.takeWhile { it.isLetter() }; val num = line.drop(prefix.length)
+        return (letters[prefix] ?: prefix) + " " + (words[num] ?: num)
     }
 
     /** What Moyna says when the bus tile is tapped. */

@@ -8,13 +8,20 @@ They say *"Moyna"*, hear a chime, ask anything out loud in Bengali (or English),
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE) ![Android 11+](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white) ![Works on 32-bit phones](https://img.shields.io/badge/works%20on-old%2032--bit%20phones-blue) ![Gemini Live API](https://img.shields.io/badge/Gemini%20Live%20API-free%20tier-8E75B2) ![Language](https://img.shields.io/badge/speaks-Bengali%20%7C%20English-orange)
 
 <p align="center">
-  <img src="docs/screenshots/1-waiting.png" width="200" alt="Waiting screen: Moyna is not listening; call 'Moyna' or tap the screen">
+  <img src="docs/screenshots/hub.png" width="200" alt="Home hub: clock, Bangladesh time, live bus times, next prayer, talk and quiet buttons, weather for the next 7 hours">
   &nbsp;
-  <img src="docs/screenshots/2-listening.png" width="200" alt="Listening screen with a big red stop button">
+  <img src="docs/screenshots/listening.png" width="200" alt="Listening screen after someone says Moyna">
   &nbsp;
-  <img src="docs/screenshots/3-sleeping.png" width="200" alt="Sleep screen: Moyna will listen again in 2 minutes">
+  <img src="docs/screenshots/speaking.png" width="200" alt="Moyna is speaking, with a big red stop button">
+  &nbsp;
+  <img src="docs/screenshots/night.png" width="200" alt="Night look: black screen with a faint clock">
 </p>
-<p align="center"><sub>Screenshots from version 1. Version 2 adds a home hub: a big clock, tiles for bus, prayer times and talking to Moyna, and a weather strip.</sub></p>
+<p align="center"><sub>The hub on the wall, listening, speaking, and the night look. (The bus lines shown are stand-ins from a public stop, not ours.)</sub></p>
+
+**This page has two parts:**
+
+1. **[Our build](#part-1-our-build)**: the wall hub I made for my mom, and what we learned making it.
+2. **[Build your own](#part-2-build-your-own)**: the same app with your own key, buses, prayer calendar and settings. Everything personal lives in private files, so nothing of ours is baked in.
 
 ---
 
@@ -34,11 +41,15 @@ I built it for my mom, but it's really for **any older Bengali person** who'd ra
 
 Getting it right took a lot of real-world testing in our living room. The TV kept waking it up. It once got stuck chatting back and forth with a Bengali drama on the TV. It even stopped itself by hearing its own voice. Every feature below exists because something like that actually happened.
 
+# Part 1: Our build
+
+A budget phone on the living room wall, always plugged in, locked to this one app. This is what it does for my mom every day.
+
 ## What it does
 
 - 🗣️ **Bengali conversation, kept short.** Real-time speech in, speech out (Gemini Live native audio). Moyna answers in one or two plain sentences of spoken Bangladeshi Bengali (or English if spoken to in English), with no small talk and no questions back. A conversation ends by itself after 3 answers.
 - 🐦 **Wake word "Moyna", fully on the phone.** Offline keyword spotting with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). **Nothing leaves the phone until after the chime.** No account, no trial, no wake-word license. It works best within a few feet of the phone; from across a room, tap the 🎤 tile instead.
-- 🏠 **A home hub on the wall.** A large clock with the date and Bangladesh time, big tiles with an emoji and a Bengali label, and a weather strip showing now and the next 7 hours. It dims when idle and goes black with a faint clock when the room is dark (it uses the phone's light sensor).
+- 🏠 **A home hub on the wall.** A large clock with the date and Bangladesh time, big tiles with an emoji and a Bengali label, and a weather strip showing now and the next 7 hours. It dims when idle, and from 11 PM to 4 AM it goes black with a faint clock (a tap lights it up).
 - 🚌 **Bus tile.** Live arrival times for your own stops (MTA Bus Time, New York), shown on the tile and spoken on a tap, about a second later.
 - 🕌 **Prayer times and azan.** Times come from your own mosque calendar (typed into a small file), or are calculated when there is no file. The azan plays quietly at each prayer time; each prayer can be switched off.
 - 🌦️ **Weather.** From Open-Meteo (free, no key). A tap says how it feels and whether rain or snow is coming in the next 12 hours.
@@ -50,6 +61,30 @@ Getting it right took a lot of real-world testing in our living room. The TV kep
 - 🔒 **Kiosk mode and a hidden admin screen.** Optional: lock the phone to Moyna so it can't be left by accident. Holding the clock for 10 seconds and entering a PIN opens an admin screen with today's activity, azan switches and "exit kiosk".
 - 📒 **Events log.** Every wake-up, question (text only, never audio), answer, tile tap and problem is written to a private log on the phone, with a script for a weekly summary.
 - 🔌 **Appliance-grade reliability.** Runs as a foreground service, starts by itself after a reboot, survives Wi-Fi drops, and plays a pre-recorded Bengali *"the internet isn't working"* message when offline.
+
+## How it works
+
+```mermaid
+flowchart LR
+    Mic[Phone mic, 16 kHz] --> KWS{{"sherpa-onnx wake word (on the phone)"}}
+    KWS -- "Moyna!" --> Chime((chime))
+    Chime --> Live["Gemini Live API (WebSocket)<br/>speech in, speech out"]
+    Live -- "voice answer, 24 kHz" --> Speaker[Speaker]
+    Live -- "look_up(question)" --> Search["Gemini Live + Google Search"]
+    Search -- facts --> Live
+    Live -- "go_to_sleep / set_volume / end" --> App[Moyna app]
+    Mic -- "during a conversation" --> Stop{{"on-phone stop words<br/>thamo / Moyna stop"}} --> App
+```
+
+- **One conversation = one short Live session.** Her voice streams as 16 kHz PCM. Gemini's own voice-activity detection decides when she's finished, tuned to be patient with pauses. Answers stream back as 24 kHz audio.
+- **While Moyna talks, the mic isn't sent to Gemini**, because Gemini would hear and transcribe its own echo. On the test phone the speaker sits next to the microphone, so the phone cannot hear a voice over Moyna's own; interrupting is done with the red stop button, or by voice in a pause.
+- **Tiles speak through a one-sentence Live session.** The app builds the Bengali sentence itself from fresh data and asks Gemini only to read it aloud, which starts about a second after the tap.
+- **Look-ups use a second model.** On the free tier, Google Search only works with the older Live model, so the main model calls a `look_up` tool and the app asks the search-capable model in the background. That model also speaks its answer; the app stops as soon as the words are complete instead of waiting for the speech to finish, which cut look-ups from about 15 seconds to 4 to 9.
+- **32-bit friendly.** The app ships only armeabi-v7a native code. The sherpa-onnx int8/"mobile" models hang on 32-bit ARM, so full-precision ones are used.
+
+# Part 2: Build your own
+
+The app is the same one that hangs on our wall. You bring your own key and settings.
 
 ## What you need
 
@@ -87,7 +122,8 @@ You don't need to understand any commands. An AI coding assistant that can run t
    3. Tell me exactly where to paste my Gemini API key (local.properties) so it never gets
       printed, logged, shared or uploaded anywhere. Never show the key back to me.
    4. Help me fill in personal.properties (who to suggest contacting for health questions,
-      and our emergency number).
+      our emergency number, and if I want them: an admin PIN, my location for the weather,
+      and my New York bus stops).
    5. Build the app and install it on my phone. Then run the permission commands from the
       README ("Option B", step 7), turn off the phone's screen lock, and set media volume to max.
    6. Help me test it: I'll say "Moyna", wait for the chime, and ask something in Bengali.
@@ -132,29 +168,26 @@ You don't need to understand any commands. An AI coding assistant that can run t
 
 > ⚠️ The API key is compiled into the APK. That's fine for a phone that stays in your home, but don't publish the APK.
 
-## How it works
+## What works right away, and what you add
 
-```mermaid
-flowchart LR
-    Mic[Phone mic, 16 kHz] --> KWS{{"sherpa-onnx wake word (on the phone)"}}
-    KWS -- "Moyna!" --> Chime((chime))
-    Chime --> Live["Gemini Live API (WebSocket)<br/>speech in, speech out"]
-    Live -- "voice answer, 24 kHz" --> Speaker[Speaker]
-    Live -- "look_up(question)" --> Search["Gemini Live + Google Search"]
-    Search -- facts --> Live
-    Live -- "go_to_sleep / set_volume / end" --> App[Moyna app]
-    Mic -- "during a conversation" --> Stop{{"on-phone stop words<br/>thamo / Moyna stop"}} --> App
-```
+With only a Gemini key, you get the clock, talking with Moyna, look-ups, the prayer tile (calculated times) and the quiet button. The rest switches on when you fill it in; a tile with nothing behind it is simply left off the screen.
 
-- **One conversation = one short Live session.** Her voice streams as 16 kHz PCM. Gemini's own voice-activity detection decides when she's finished, tuned to be patient with pauses. Answers stream back as 24 kHz audio.
-- **While Moyna talks, the mic isn't sent to Gemini**, because Gemini would hear and transcribe its own echo. On the test phone the speaker sits next to the microphone, so the phone cannot hear a voice over Moyna's own; interrupting is done with the red stop button, or by voice in a pause.
-- **Tiles speak through a one-sentence Live session.** The app builds the Bengali sentence itself from fresh data and asks Gemini only to read it aloud, which starts about a second after the tap.
-- **Look-ups use a second model.** On the free tier, Google Search only works with the older Live model, so the main model calls a `look_up` tool and the app asks the search-capable model in the background. That model also speaks its answer; the app stops as soon as the words are complete instead of waiting for the speech to finish, which cut look-ups from about 15 seconds to 4 to 9.
-- **32-bit friendly.** The app ships only armeabi-v7a native code. The sherpa-onnx int8/"mobile" models hang on 32-bit ARM, so full-precision ones are used.
+| Piece | What it needs | Where it goes |
+|---|---|---|
+| Talking with Moyna | Free Gemini API key | `GEMINI_API_KEY` in `local.properties` |
+| Health and emergency wording | Who to contact, emergency number | `personal.properties` |
+| Weather strip | Your location (decimal degrees) | `HOME_LAT`, `HOME_LON` in `personal.properties` |
+| Bus tile (New York) | Free [MTA Bus Time key](https://bustime.mta.info/wiki/Developers/Index) and your stop codes | `MTA_BUSTIME_KEY` in `local.properties`, `BUS_STOPS` in `personal.properties` |
+| Your mosque's prayer times | One small CSV file per month (optional; otherwise calculated) | `private/prayer-times/` |
+| Azan | A recording you have the right to use | `private/azan/azan.ogg` |
+| Admin screen | A 4-digit PIN | `ADMIN_PIN` in `personal.properties` |
+| Kiosk mode | A phone with no accounts on it | See [Kiosk mode](#kiosk-mode-optional) |
+
+`local.properties`, `personal.properties` and the `private/` folder are git-ignored, so your key, location and stops never end up on GitHub if you fork this.
 
 ## Make it yours
 
-Everything easy to change is in [`MoynaConfig.kt`](app/src/main/java/app/moyna/MoynaConfig.kt): the model, the voice, the personality and system prompt, how many answers a conversation gets, the tiles, screen brightness, day/night light levels and azan volume.
+Everything easy to change is in [`MoynaConfig.kt`](app/src/main/java/app/moyna/MoynaConfig.kt): the model, the voice, the personality and system prompt, how many answers a conversation gets, the tiles, screen brightness, night hours and azan volume.
 
 - **Tiles:** the `TILES` list in `MoynaConfig.kt`. Add, remove or reorder lines. Known ids: `bus`, `prayer`, `talk`, `quiet`, `weather` (drawn as a wide strip).
 - **Wake word:** `app/src/main/assets/kws/wake.txt`. Each line is one way the name can sound, written as phonemes, with its own sensitivity. You can rename the assistant by writing new phonemes, no training needed.
@@ -175,6 +208,18 @@ Times are typed as on a wall calendar, 12-hour with no AM/PM. The app uses the H
 
 **Azan recording:** put `azan.ogg` (and, if you like, a separate `fajr.ogg`) in `private/azan/`. Use a recording you have the right to use; none is included in this repository.
 
+### Kiosk mode (optional)
+
+Kiosk mode makes Moyna the phone's home screen and only app, so it can't be left by accident. It needs a phone with **no accounts** on it.
+
+```bash
+adb install -r -t app-debug.apk                                # -t is required: the app is marked testOnly
+adb shell dpm set-device-owner app.moyna/.AdminReceiver        # turn kiosk on (then open Moyna once)
+adb shell dpm remove-active-admin app.moyna/.AdminReceiver     # turn kiosk off completely
+```
+
+The app is marked `android:testOnly="true"` on purpose: that is what allows `remove-active-admin` to work, so the phone never needs a factory reset to get out. You can also leave kiosk from the phone: hold the clock for 10 seconds, enter the `ADMIN_PIN` from `personal.properties`, and tap **Exit kiosk**.
+
 ### Events log
 
 ```bash
@@ -190,7 +235,7 @@ The log is JSON Lines, one file per day, kept for 60 days in the app's private s
 |---|---|
 | `adb shell am start -n app.moyna/.MainActivity --ei test_prompts 20` | **Beep test:** 20 beeps, 6 s apart; say "Moyna" after each. It counts catches and saves the recording for offline tuning. |
 | `adb shell am start -n app.moyna/.MainActivity --ez echo_test true` | **Echo test:** measures how much of Moyna's own voice the mic hears, with and without echo cancellation. |
-| `adb shell am start -n app.moyna/.MainActivity --es look night` | Force the **night look** (`day` for the day look, `auto` to go back to the light sensor). |
+| `adb shell am start -n app.moyna/.MainActivity --es look night` | Force the **night look** (`day` for the day look, `auto` to go back to the clock). |
 | `adb shell am start -n app.moyna/.MainActivity --es azan test` | Play the azan now. |
 | `adb logcat -s Moyna` | Live log: wake-ups, what Gemini heard and said, commands, tiles, errors. |
 
@@ -204,6 +249,7 @@ The log is JSON Lines, one file per day, kept for 60 days in the app's private s
 | A knock on the table **cut Moyna off** (the "loud voice interrupts" feature) | Removed. Stopping is the red button or a stop word |
 | "Stop" put Moyna to sleep for 2 minutes, so she then **ignored her name** | Stop only ends the conversation; sleep only when asked |
 | Look-ups took **15 seconds** | Stop waiting once the answer text is complete: 4 to 9 seconds |
+| The light sensor made the screen go black whenever something covered it | Night look by the clock (11 PM to 4 AM) |
 | The wake word **cannot hear from across the room** on this phone's microphone (0 of 20 at 7 feet, about 11 of 20 at 2 feet) | A big tap-to-talk tile on the hub |
 | Moyna **stopped herself**, hearing her own voice as "stop" | While she talks, a stop only counts after her name ("Moyna stop") |
 | Gemini **transcribes its own echo**, even through the phone's echo canceller | The mic isn't streamed while Moyna talks; there's a separate on-phone stop listener |
@@ -232,15 +278,3 @@ Ideas and pull requests are welcome.
 Built with [Gemini Live API](https://ai.google.dev), [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), ONNX Runtime and OkHttp. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 MIT License. Use it, change it, build it for your own family. If you do, I'd love to hear about it, and a ⭐ helps others find it.
-
-## Kiosk mode (optional)
-
-Kiosk mode makes Moyna the phone's home screen and only app, so it can't be left by accident. It needs a phone with **no accounts** on it.
-
-```bash
-adb install -r -t app-debug.apk                                # -t is required: the app is marked testOnly
-adb shell dpm set-device-owner app.moyna/.AdminReceiver        # turn kiosk on (then open Moyna once)
-adb shell dpm remove-active-admin app.moyna/.AdminReceiver     # turn kiosk off completely
-```
-
-The app is marked `android:testOnly="true"` on purpose: that is what allows `remove-active-admin` to work, so the phone never needs a factory reset to get out. You can also leave kiosk from the phone: hold the clock for 10 seconds, enter the `ADMIN_PIN` from `personal.properties`, and tap **Exit kiosk**.

@@ -29,12 +29,9 @@ object MoynaConfig {
     // The quiet tile puts Moyna to sleep for this many minutes (tap it again to wake her).
     const val QUIET_TILE_MINUTES = 60
 
-    // Day / night, from the phone's light sensor (lux). Night when at or below NIGHT_LUX for 20 s,
-    // day again at or above DAY_LUX. If the sensor gives no reading, the clock decides instead.
-    const val NIGHT_LUX = 2f
-    const val DAY_LUX = 8f
-    const val NIGHT_FROM_HOUR = 22
-    const val NIGHT_UNTIL_HOUR = 6
+    // Day / night, by the clock (24-hour): the dark night look from NIGHT_FROM_HOUR until NIGHT_UNTIL_HOUR.
+    const val NIGHT_FROM_HOUR = 23
+    const val NIGHT_UNTIL_HOUR = 4
     // In the day the screen dims after this long without a touch; at night it goes dark after this long.
     const val IDLE_DIM_SECONDS = 120
     const val NIGHT_AWAKE_SECONDS = 30

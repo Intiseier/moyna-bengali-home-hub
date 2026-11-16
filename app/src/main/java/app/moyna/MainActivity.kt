@@ -8,10 +8,6 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
@@ -34,7 +30,7 @@ import java.util.Locale
  * The home hub on the wall: clock on top, a status line, big tiles (see MoynaConfig.TILES) and a
  * weather strip. Moyna itself runs in MoynaService; this screen only shows things and passes taps on.
  */
-class MainActivity : Activity(), SensorEventListener {
+class MainActivity : Activity() {
 
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var root: FrameLayout
@@ -103,6 +99,8 @@ class MainActivity : Activity(), SensorEventListener {
             row = null; used = 0f
         }
         for (t in MoynaConfig.TILES) {
+            // No bus stops or no home location set: leave that tile out.
+            if ((t.id == "bus" && !Bus.ready()) || (t.id == "weather" && !Weather.ready())) continue
             if (t.width >= 2f) {
                 flush()
                 val v = when (t.id) { "weather" -> weatherStrip(); "bus" -> busTile(t); else -> tileView(t) }
@@ -293,8 +291,6 @@ class MainActivity : Activity(), SensorEventListener {
         } else {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
         }
-        val sm = getSystemService(SensorManager::class.java)
-        sm.getDefaultSensor(Sensor.TYPE_LIGHT)?.let { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
         lastTouch = SystemClock.elapsedRealtime()
         ui.removeCallbacks(tick); tick.run()
     }
@@ -308,7 +304,6 @@ class MainActivity : Activity(), SensorEventListener {
         MoynaHub.listener = null
         MoynaHub.usageListener = null
         HubData.onChange = null
-        getSystemService(SensorManager::class.java).unregisterListener(this)
         ui.removeCallbacks(tick)
         super.onStop()
     }
@@ -342,32 +337,17 @@ class MainActivity : Activity(), SensorEventListener {
 
     // ---------- day / night and dimming ----------
 
-    private var lux = -1f                 // latest light sensor reading (-1 = none yet)
-    private var darkSince = 0L            // when the room became dark (0 = it is not dark)
     private var night = false
     private var lastTouch = 0L
     private var forceNight: Boolean? = null   // set from the PC for screenshots (see handleTestIntent)
 
-    override fun onSensorChanged(e: SensorEvent) { lux = e.values[0] }
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-
-    /** Night = the room has been dark for a while (light sensor), or by the clock if there is no sensor reading. */
+    /** Night = by the clock, from NIGHT_FROM_HOUR until NIGHT_UNTIL_HOUR. */
     private fun updateNight() {
-        val now = SystemClock.elapsedRealtime()
         val was = night
-        val forced = forceNight
-        if (forced != null) night = forced
-        else if (lux < 0) {
-            val h = ZonedDateTime.now().hour
-            night = h >= MoynaConfig.NIGHT_FROM_HOUR || h < MoynaConfig.NIGHT_UNTIL_HOUR
-        } else if (lux <= MoynaConfig.NIGHT_LUX) {
-            if (darkSince == 0L) darkSince = now
-            if (now - darkSince > 20_000) night = true
-        } else {
-            darkSince = 0
-            if (lux >= MoynaConfig.DAY_LUX) night = false
-        }
-        if (was != night) Log.i("Moyna", "screen: ${if (night) "night" else "day"} look (light ${lux.toInt()} lux)")
+        val h = ZonedDateTime.now().hour
+        val from = MoynaConfig.NIGHT_FROM_HOUR; val until = MoynaConfig.NIGHT_UNTIL_HOUR
+        night = forceNight ?: if (from > until) (h >= from || h < until) else (h in from until until)
+        if (was != night) Log.i("Moyna", "screen: ${if (night) "night" else "day"} look")
     }
 
     private fun busy() = state == MoynaState.LISTENING || state == MoynaState.THINKING ||
@@ -545,7 +525,7 @@ class MainActivity : Activity(), SensorEventListener {
                     "Fajr ${today.fajr}, Zuhr ${today.zuhr}, Asr ${today.asr}, Maghrib ${today.maghrib}, Isha ${today.isha}\n")
                 append("Calendar ends: ${Prayer.lastCalendarDate ?: "no calendar loaded"}\n")
                 append("Screen words: ${if (english()) "English" else "Bengali"}\n")
-                append("Light: ${lux.toInt()} lux (${if (night) "night" else "day"} look)\n")
+                append("Screen: ${if (night) "night" else "day"} look\n")
                 append("Kiosk: " + when { !Kiosk.isOwner(this@MainActivity) -> "not set up"; Kiosk.isOff(this@MainActivity) -> "OFF"; else -> "ON" })
             }
             log.text = "TODAY'S EVENTS (newest first)\n\n" + ev.reversed().take(300).joinToString("\n") { e ->
@@ -589,7 +569,7 @@ class MainActivity : Activity(), SensorEventListener {
 
     //   adb shell am start -n app.moyna/.MainActivity --ei test_prompts 20
     private fun handleTestIntent(intent: Intent?) {
-        // --es look night|day|auto : force the night or day look (for screenshots), or go back to the sensor.
+        // --es look night|day|auto : force the night or day look (for screenshots), or go back to the clock.
         intent?.getStringExtra("look")?.let {
             intent.removeExtra("look")
             forceNight = when (it) { "night" -> true; "day" -> false; else -> null }

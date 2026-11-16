@@ -16,7 +16,8 @@ val mtaKey: String = localProps.getProperty("MTA_BUSTIME_KEY", "").trim()
 // Personal settings (who to contact, emergency number) come from personal.properties (private),
 // or from personal.properties.example if you haven't made your own yet.
 val personalProps = Properties().apply {
-    val own = rootProject.file("personal.properties")
+    // -PpersonalFile=some.properties builds with a different settings file (e.g. made-up ones for screenshots).
+    val own = rootProject.file((findProperty("personalFile") as String?) ?: "personal.properties")
     val example = rootProject.file("personal.properties.example")
     (if (own.exists()) own else example).takeIf { it.exists() }?.reader(Charsets.UTF_8)?.use { load(it) }
 }
