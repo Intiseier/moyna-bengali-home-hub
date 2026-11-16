@@ -33,7 +33,11 @@ class MoynaEngine(
         main.post {
             when {
                 state == MoynaState.TEST -> { testHits++; Log.i(tag, "TEST WAKE #$testHits"); showTest() }
-                mode == Listen.COMMAND && client != null && word.startsWith("MOYNA") -> lastNameAt = SystemClock.elapsedRealtime()
+                mode == Listen.COMMAND && client != null && word.startsWith("MOYNA") -> {
+                    lastNameAt = SystemClock.elapsedRealtime()
+                    // Her name alone, while Moyna is talking, cuts the answer short; Moyna then listens.
+                    if (state == MoynaState.SPEAKING) { Log.i(tag, "name heard while talking: answer cut short"); stopSpeaking() }
+                }
                 mode == Listen.COMMAND && client != null && word.startsWith("STOP") -> {
                     // While Moyna talks, her own voice comes back through the mic and can sound like a
                     // stop word. Then only "Moyna ... stop" counts (her name within the last 2.5 s).
