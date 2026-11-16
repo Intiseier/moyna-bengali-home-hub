@@ -33,14 +33,14 @@ class MoynaEngine(
         main.post {
             when {
                 state == MoynaState.TEST -> { testHits++; Log.i(tag, "TEST WAKE #$testHits"); showTest() }
-                mode == Listen.COMMAND && client != null && word == "MOYNA" -> lastNameAt = SystemClock.elapsedRealtime()
+                mode == Listen.COMMAND && client != null && word.startsWith("MOYNA") -> lastNameAt = SystemClock.elapsedRealtime()
                 mode == Listen.COMMAND && client != null && word.startsWith("STOP") -> {
                     // While Moyna talks, her own voice comes back through the mic and can sound like a
                     // stop word. Then only "Moyna ... stop" counts (her name within the last 2.5 s).
                     val nameFirst = word.startsWith("STOP_NAME") ||
                         SystemClock.elapsedRealtime() - lastNameAt < 2_500
                     if (state == MoynaState.SPEAKING && !nameFirst) Log.i(tag, "ignored $word: Moyna was talking and no name before it")
-                    else stopAndSleep(MoynaConfig.SLEEP_MINUTES, "voice: $word")
+                    else stopConversation("voice: $word")
                 }
                 mode == Listen.WAKE && client == null && (state == MoynaState.IDLE || state == MoynaState.ERROR) ->
                     startConversation("wake:$word")
@@ -118,10 +118,17 @@ class MoynaEngine(
         }
     }
 
-    /** The red stop button: stop everything and sleep, same as saying "থামো". */
-    fun stopButton() = main.post { stopAndSleep(MoynaConfig.SLEEP_MINUTES, "stop button") }
+    /** The red stop button: stop everything, same as saying "থামো". */
+    fun stopButton() = main.post { stopConversation("stop button") }
 
-    // ---------- sleep ("থামো", stop button, or "এক ঘণ্টা চুপ থাকো") ----------
+    /** "থামো" or the stop button: cut the answer, end the conversation, go back to waiting for "Moyna". */
+    private fun stopConversation(why: String) {
+        Log.i(tag, "stop ($why): conversation ended, still listening for Moyna")
+        player.stopNow()
+        endConversation(playEndChime = true)
+    }
+
+    // ---------- sleep (only when she asks for quiet: "এক ঘণ্টা চুপ থাকো") ----------
 
     private var sleepUntil = 0L
     private var lastNameAt = 0L    // when "Moyna" was last heard during a conversation
@@ -162,7 +169,7 @@ class MoynaEngine(
     private fun sleepText(): String {
         val mins = ((sleepUntil - SystemClock.elapsedRealtime() + 59_999) / 60_000).coerceAtLeast(1)
         val left = if (mins >= 60) "${mins / 60} ঘণ্টা ${if (mins % 60 > 0) "${mins % 60} মিনিট " else ""}" else "$mins মিনিট "
-        return bengaliDigits("আবার শুনবে ${left}পরে")
+        return bengaliDigits("নিজে জাগবে ${left}পরে")
     }
 
     private fun bengaliDigits(s: String) = s.map { if (it in '0'..'9') '০' + (it - '0') else it }.joinToString("")
@@ -319,7 +326,22 @@ class MoynaEngine(
     private var soundCount = 0
     private var tvMode = false
 
+    // Room loudness report every 5 minutes while waiting, to tune TV mode from real numbers.
+    private val roomRms = IntArray(3000)
+    private var roomCount = 0
+
+    private fun noteRoomLoudness(rms: Int) {
+        roomRms[roomCount++] = rms
+        if (roomCount < roomRms.size) return
+        roomRms.sort()
+        val over = roomRms.count { it > MoynaConfig.TV_SOUND_LOUDNESS } * 100 / roomRms.size
+        Log.i(tag, "room loudness (5 min): quiet ${roomRms[300]}, middle ${roomRms[1500]}, loud ${roomRms[2700]}, " +
+            "max ${roomRms[2999]}; $over% above ${MoynaConfig.TV_SOUND_LOUDNESS}; TV mode ${if (tvMode) "on" else "off"}")
+        roomCount = 0
+    }
+
     private fun updateTvMode(rms: Int) {
+        noteRoomLoudness(rms)
         val loud = rms > MoynaConfig.TV_SOUND_LOUDNESS
         if (soundWindow[soundIndex]) soundCount--
         soundWindow[soundIndex] = loud

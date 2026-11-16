@@ -40,17 +40,19 @@ object MoynaConfig {
     // If no answer arrives this long after she stops talking, give up on this question.
     const val ANSWER_TIMEOUT_SECONDS = 20
 
-    // After "থামো" / "stop" / the stop button, Moyna ignores her name for this many minutes
-    // (so the TV can't wake her straight back up). A tap on the screen wakes her early.
-    const val SLEEP_MINUTES = 2
+    // "থামো" / "stop" / the stop button only END the conversation; Moyna keeps listening for her name.
+    // She sleeps (ignores her name) only when asked for quiet, e.g. "এক ঘণ্টা চুপ থাকো".
+    // This is how many minutes she sleeps if no time was said. A tap on the screen wakes her.
+    const val SLEEP_MINUTES = 60
 
     // Use the phone's echo canceller during conversations, so Moyna's own voice is ~20x quieter
     // in the microphone and "Moyna stop" is heard over her. (Measured on the Schok Volt SV55.)
     const val ECHO_CANCEL = true
 
     // While Moyna talks, a voice louder than this (for 0.4 s) makes her stop and listen.
-    // Her own leftover echo peaked at 585, so 1800 leaves a wide margin. 0 = turned off.
-    const val BARGE_IN_LOUDNESS = 1800
+    // Her own leftover echo peaked at 585. 0 = turned off.
+    // OFF since v2: knocks on the table next to the phone were loud enough to cut her off.
+    const val BARGE_IN_LOUDNESS = 0
 
     // ---- Wake word ("Moyna") tuning ----
     // The spellings and their sensitivity (#threshold) are in app/src/main/assets/kws/:
@@ -91,9 +93,11 @@ object MoynaConfig {
         - If the sound is clearly TV, background talk, or not meant for you, stay silent.
 
         Commands (use your tools, do not just talk about them):
-        - If she asks you to stop, be quiet, sleep, or not disturb her ("থামো", "চুপ করো",
-          "এক ঘণ্টা ডেকো না", "stop"), call go_to_sleep with the minutes she says (2 if she
-          does not say a time; for "tonight" use minutes until 7 in the morning).
+        - If she just says stop or be quiet ("থামো", "চুপ করো", "stop"), call end_conversation.
+        - Only if she clearly asks you to stay quiet for a length of time or not to disturb her
+          ("এক ঘণ্টা চুপ থাকো", "এক ঘণ্টা ডেকো না", "আজ রাতে ডেকো না"), call go_to_sleep with
+          the minutes she says (60 if she gives no time; for "tonight" use minutes until 7 in
+          the morning). Never call go_to_sleep for TV sound or anything not clearly said to you.
         - If she asks for louder or quieter sound, call set_volume.
         - For anything current or changing (weather, news, cricket and other sports scores,
           prices, prayer times, opening hours, events), call look_up with a short English question

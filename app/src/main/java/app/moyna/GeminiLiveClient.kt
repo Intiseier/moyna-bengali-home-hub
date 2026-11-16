@@ -130,13 +130,13 @@ class GeminiLiveClient(private val apiKey: String, private val listener: Listene
             .put("systemInstruction", JSONObject().put("parts", JSONArray()
                 .put(JSONObject().put("text", MoynaConfig.SYSTEM_PROMPT + "\n\n" + timeNow()))))
             .put("tools", JSONArray().put(JSONObject().put("functionDeclarations", JSONArray()
-                .put(tool("go_to_sleep", "Stop listening and stay quiet for some minutes. Use when she asks you to stop, be quiet, sleep or not disturb her.",
+                .put(tool("go_to_sleep", "Stop listening and stay quiet for some minutes. Use ONLY when she clearly asks you to stay quiet for a length of time or not to disturb her. For a plain stop, use end_conversation.",
                     JSONObject().put("minutes", JSONObject().put("type", "INTEGER")
-                        .put("description", "How many minutes to stay quiet. 2 if she does not say.")), listOf("minutes")))
+                        .put("description", "How many minutes to stay quiet. 60 if she does not say.")), listOf("minutes")))
                 .put(tool("set_volume", "Make the speaker louder or quieter.",
                     JSONObject().put("change", JSONObject().put("type", "STRING")
                         .put("enum", JSONArray().put("louder").put("quieter").put("max"))), listOf("change")))
-                .put(tool("end_conversation", "End the conversation now, when she says thank you, that is all, or nothing else.",
+                .put(tool("end_conversation", "End the conversation now, when she says stop, be quiet, thank you, that is all, or nothing else.",
                     JSONObject(), emptyList()))
                 .put(tool("look_up", "Look up current information on the internet with Google Search: weather, news, sports scores, prices, prayer times, opening hours, anything that changes.",
                     JSONObject().put("question", JSONObject().put("type", "STRING")

@@ -160,7 +160,7 @@ class MainActivity : Activity() {
             MoynaState.THINKING -> Triple("একটু ভাবছি...", "", Color.rgb(150, 100, 20))
             MoynaState.SPEAKING -> Triple("ময়না বলছে...", "\"ময়না থামো\" বলুন বা লাল বোতাম চাপুন", Color.rgb(30, 80, 150))
             MoynaState.ERROR -> Triple(detail ?: "সমস্যা হয়েছে", "আবার চেষ্টা করতে ছুঁয়ে দিন", Color.rgb(140, 40, 40))
-            MoynaState.SLEEPING -> Triple("ময়না ঘুমাচ্ছে", "${detail ?: ""}\nএখনই ডাকতে স্ক্রিনে ছুঁয়ে দিন", Color.rgb(35, 35, 55))
+            MoynaState.SLEEPING -> Triple("ময়না ঘুমাচ্ছে", "ছুঁয়ে জাগান\n\n${detail ?: ""}", Color.rgb(35, 35, 55))
             MoynaState.TEST -> Triple("পরীক্ষা চলছে", detail ?: "", Color.rgb(90, 40, 110))
         }
         big.text = bigText
@@ -169,7 +169,8 @@ class MainActivity : Activity() {
         val active = s == MoynaState.LISTENING || s == MoynaState.THINKING || s == MoynaState.SPEAKING || s == MoynaState.ERROR
         stop.visibility = if (active) android.view.View.VISIBLE else android.view.View.GONE
         // Keep the screen on only while something is happening; otherwise let it sleep.
-        if (active || s == MoynaState.TEST) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // (Also while asleep, so she can always see why Moyna is not answering.)
+        if (active || s == MoynaState.TEST || s == MoynaState.SLEEPING) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 }
