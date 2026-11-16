@@ -141,6 +141,20 @@ class MoynaEngine(
         }
     }
 
+    /** A tile on the hub screen was tapped. */
+    fun tileTapped(id: String) = main.post {
+        Log.i(tag, "tile tapped: $id")
+        when (id) {
+            "talk" -> trigger()
+            "quiet" ->
+                if (state == MoynaState.SLEEPING) {
+                    Log.i(tag, "woken by the quiet tile")
+                    main.removeCallbacks(sleepTick); wake.clear(); player.play(Sounds.start); setState(MoynaState.IDLE)
+                } else stopAndSleep(MoynaConfig.QUIET_TILE_MINUTES, "quiet tile")
+            else -> player.play(Sounds.error)   // bus, prayer, weather: coming in Phase 4
+        }
+    }
+
     /** The red stop button: stop everything, same as saying "থামো". */
     fun stopButton() = main.post { stopConversation("stop button") }
 

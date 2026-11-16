@@ -6,72 +6,148 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.media.AudioManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
-/** The big Bengali screen. Moyna itself runs in MoynaService; this only shows it and handles taps. */
-class MainActivity : Activity() {
+/**
+ * The home hub on the wall: clock on top, a status line, and big tiles (see MoynaConfig.TILES).
+ * Moyna itself runs in MoynaService; this screen only shows things and passes taps on.
+ */
+class MainActivity : Activity(), SensorEventListener {
 
-    private lateinit var big: TextView
-    private lateinit var small: TextView
-    private lateinit var root: android.widget.FrameLayout
+    private val ui = Handler(Looper.getMainLooper())
+    private lateinit var root: FrameLayout
+    private lateinit var clock: TextView
+    private lateinit var date: TextView
+    private lateinit var dhaka: TextView
+    private lateinit var status: TextView
+    private lateinit var grid: LinearLayout
+    private lateinit var talk: LinearLayout        // shown instead of the tiles during a conversation
+    private lateinit var talkText: TextView
     private lateinit var stop: TextView
-    private lateinit var usageFill: android.view.View
-    private lateinit var usageRest: android.view.View
+    private lateinit var usageFill: View
+    private lateinit var usageRest: View
+    private val tileViews = HashMap<String, LinearLayout>()
+    private val tileSubs = HashMap<String, TextView>()
+
+    private var state = MoynaState.IDLE
+    private var detail: String? = null
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         volumeControlStream = AudioManager.STREAM_MUSIC
         setShowWhenLocked(true)
         setTurnScreenOn(true)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)   // a wall clock never sleeps; it dims
 
-        big = TextView(this).apply {
-            textSize = 64f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
+        // ----- top: clock (English), date, Bangladesh time -----
+        clock = text(60f, bold = true)
+        date = text(21f)
+        dhaka = text(18f).apply { setPadding(0, dp(2), 0, 0) }
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(8), dp(14), dp(8), dp(6))
+            addView(clock); addView(date); addView(dhaka)
         }
-        small = TextView(this).apply {
-            textSize = 30f; gravity = Gravity.CENTER; setTextColor(Color.argb(220, 255, 255, 255))
-            setPadding(24, 48, 24, 0)
+
+        // ----- status line (Bengali) -----
+        status = text(21f).apply { setPadding(dp(8), dp(6), dp(8), dp(8)) }
+
+        // ----- tiles: 2 columns, as many rows as MoynaConfig.TILES needs -----
+        grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(6), 0, dp(6), dp(12)) }
+        MoynaConfig.TILES.chunked(2).forEach { pair ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            pair.forEach { row.addView(tileView(it), LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(dp(5), dp(5), dp(5), dp(5)) }) }
+            if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, -1, 1f))
+            grid.addView(row, LinearLayout.LayoutParams(-1, 0, 1f))
         }
-        val middle = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
-            setPadding(32, 32, 32, 220)
-            addView(big); addView(small)
-        }
-        // Big red stop sign at the bottom (shown while Moyna is listening or talking).
-        val d = resources.displayMetrics.density
-        stop = TextView(this).apply {
+
+        // ----- conversation panel: big words, and the red stop button while Moyna makes sound -----
+        talkText = text(46f, bold = true)
+        stop = text(34f, bold = true).apply {
             text = "থামো"
-            textSize = 30f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(Color.rgb(200, 30, 30)); setStroke((4 * d).toInt(), Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL; setColor(Color.rgb(205, 30, 30)); setStroke(dp(4), Color.WHITE)
             }
-            visibility = android.view.View.GONE
+            setOnClickListener { MoynaHub.engine?.stopButton() }
         }
+        talk = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; visibility = View.GONE
+            addView(talkText, LinearLayout.LayoutParams(-1, -2))
+            addView(stop, LinearLayout.LayoutParams(dp(170), dp(170)).apply { topMargin = dp(36) })
+        }
+
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(top, LinearLayout.LayoutParams(-1, -2))
+            addView(status, LinearLayout.LayoutParams(-1, -2))
+            addView(grid, LinearLayout.LayoutParams(-1, 0, 1f))
+            addView(talk, LinearLayout.LayoutParams(-1, 0, 1f))
+        }
+
         // Thin talk-time bar along the very bottom: fills as Moyna is used today, empties at midnight.
-        usageFill = android.view.View(this)
-        usageRest = android.view.View(this)
+        usageFill = View(this); usageRest = View(this)
         val usageBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.argb(60, 255, 255, 255))
+            setBackgroundColor(Color.argb(40, 255, 255, 255))
             addView(usageFill, LinearLayout.LayoutParams(0, -1, 0f))
             addView(usageRest, LinearLayout.LayoutParams(0, -1, 1f))
         }
-        root = android.widget.FrameLayout(this).apply {
-            addView(middle, android.widget.FrameLayout.LayoutParams(-1, -1))
-            addView(usageBar, android.widget.FrameLayout.LayoutParams(-1, (8 * d).toInt(), Gravity.BOTTOM))
-            addView(stop, android.widget.FrameLayout.LayoutParams((130 * d).toInt(), (130 * d).toInt(),
-                Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = (36 * d).toInt() })
+        root = FrameLayout(this).apply {
+            addView(column, FrameLayout.LayoutParams(-1, -1))
+            addView(usageBar, FrameLayout.LayoutParams(-1, dp(5), Gravity.BOTTOM))
         }
         setContentView(root)
         handleTestIntent(intent)
     }
+
+    private fun text(size: Float, bold: Boolean = false) = TextView(this).apply {
+        textSize = size; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+        if (bold) typeface = Typeface.DEFAULT_BOLD
+    }
+
+    /** One tile: big emoji, Bengali label, and a small line for live info (bus minutes, temperature). */
+    private fun tileView(t: Tile): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            background = GradientDrawable().apply { cornerRadius = dp(18).toFloat(); setColor(Color.argb(if (t.id.isEmpty()) 12 else 38, 255, 255, 255)) }
+        }
+        if (t.id.isEmpty()) return box                       // reserved slot: a faint empty tile
+        val sub = text(17f).apply { setTextColor(Color.rgb(255, 225, 150)); visibility = View.GONE }
+        box.addView(text(46f).apply { text = t.emoji })
+        box.addView(text(24f, bold = true).apply { text = t.label })
+        box.addView(sub)
+        box.setOnClickListener {
+            box.alpha = 0.5f; box.animate().alpha(1f).setDuration(350).start()
+            MoynaHub.engine?.tileTapped(t.id)
+        }
+        tileViews[t.id] = box; tileSubs[t.id] = sub
+        return box
+    }
+
+    // ---------- life cycle ----------
 
     override fun onStart() {
         super.onStart()
@@ -84,6 +160,153 @@ class MainActivity : Activity() {
         } else {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
         }
+        val sm = getSystemService(SensorManager::class.java)
+        sm.getDefaultSensor(Sensor.TYPE_LIGHT)?.let { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        lastTouch = SystemClock.elapsedRealtime()
+        ui.removeCallbacks(tick); tick.run()
+    }
+
+    override fun onStop() {
+        MoynaHub.listener = null
+        MoynaHub.usageListener = null
+        getSystemService(SensorManager::class.java).unregisterListener(this)
+        ui.removeCallbacks(tick)
+        super.onStop()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, results)
+        if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED) MoynaService.start(this)
+    }
+
+    // ---------- clock ----------
+
+    private val timeFmt = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
+    private val dateFmt = DateTimeFormatter.ofPattern("EEEE, MMM d", Locale.ENGLISH)
+
+    private val tick = object : Runnable {
+        override fun run() {
+            val now = ZonedDateTime.now()
+            clock.text = now.format(timeFmt)
+            date.text = now.format(dateFmt)
+            dhaka.text = "Bangladesh " + now.withZoneSameInstant(ZoneId.of("Asia/Dhaka")).format(timeFmt)
+            applyLook()
+            ui.postDelayed(this, 5_000)
+        }
+    }
+
+    // ---------- day / night and dimming ----------
+
+    private var lux = -1f                 // latest light sensor reading (-1 = none yet)
+    private var darkSince = 0L            // when the room became dark (0 = it is not dark)
+    private var night = false
+    private var lastTouch = 0L
+    private var forceNight: Boolean? = null   // set from the PC for screenshots (see handleTestIntent)
+
+    override fun onSensorChanged(e: SensorEvent) { lux = e.values[0] }
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+    /** Night = the room has been dark for a while (light sensor), or by the clock if there is no sensor reading. */
+    private fun updateNight() {
+        val now = SystemClock.elapsedRealtime()
+        val was = night
+        val forced = forceNight
+        if (forced != null) night = forced
+        else if (lux < 0) {
+            val h = ZonedDateTime.now().hour
+            night = h >= MoynaConfig.NIGHT_FROM_HOUR || h < MoynaConfig.NIGHT_UNTIL_HOUR
+        } else if (lux <= MoynaConfig.NIGHT_LUX) {
+            if (darkSince == 0L) darkSince = now
+            if (now - darkSince > 20_000) night = true
+        } else {
+            darkSince = 0
+            if (lux >= MoynaConfig.DAY_LUX) night = false
+        }
+        if (was != night) Log.i("Moyna", "screen: ${if (night) "night" else "day"} look (light ${lux.toInt()} lux)")
+    }
+
+    private fun busy() = state == MoynaState.LISTENING || state == MoynaState.THINKING ||
+        state == MoynaState.SPEAKING || state == MoynaState.ERROR || state == MoynaState.TEST
+
+    /** Awake = someone touched it lately, or Moyna is doing something. */
+    private fun awake(): Boolean {
+        val idle = SystemClock.elapsedRealtime() - lastTouch
+        return busy() || idle < (if (night) MoynaConfig.NIGHT_AWAKE_SECONDS else MoynaConfig.IDLE_DIM_SECONDS) * 1000L
+    }
+
+    private fun applyLook() {
+        updateNight()
+        val awake = awake()
+        val inTalk = busy()
+        val darkLook = night && !awake
+        // Brightness: full while in use; low when idle in the day; barely on at night.
+        val b = when {
+            awake && !night -> MoynaConfig.BRIGHT_DAY
+            awake -> MoynaConfig.BRIGHT_NIGHT_AWAKE
+            night -> MoynaConfig.BRIGHT_NIGHT
+            else -> MoynaConfig.BRIGHT_DAY_IDLE
+        }
+        val lp = window.attributes
+        if (lp.screenBrightness != b) { lp.screenBrightness = b; window.attributes = lp }
+
+        root.setBackgroundColor(if (darkLook) Color.BLACK else background())
+        val ink = if (darkLook) Color.rgb(120, 120, 120) else Color.WHITE
+        clock.setTextColor(ink); date.setTextColor(ink); dhaka.setTextColor(if (darkLook) ink else Color.rgb(190, 225, 215))
+        status.setTextColor(ink)
+        status.visibility = if (darkLook && state == MoynaState.IDLE) View.INVISIBLE else View.VISIBLE
+        grid.visibility = if (inTalk) View.GONE else if (darkLook) View.INVISIBLE else View.VISIBLE
+        talk.visibility = if (inTalk) View.VISIBLE else View.GONE
+    }
+
+    private fun background() = when (state) {
+        MoynaState.LISTENING -> Color.rgb(20, 110, 70)
+        MoynaState.THINKING -> Color.rgb(150, 100, 20)
+        MoynaState.SPEAKING -> Color.rgb(30, 80, 150)
+        MoynaState.ERROR -> Color.rgb(140, 40, 40)
+        MoynaState.SLEEPING -> Color.rgb(35, 35, 55)
+        MoynaState.TEST -> Color.rgb(90, 40, 110)
+        else -> Color.rgb(18, 44, 42)
+    }
+
+    // A touch while the screen is in its dark night look only wakes the screen; it does not press anything.
+    private var swallow = false
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.action == MotionEvent.ACTION_DOWN) {
+            val wasDark = night && !awake()
+            lastTouch = SystemClock.elapsedRealtime()
+            applyLook()
+            swallow = wasDark
+        }
+        return if (swallow) true else super.dispatchTouchEvent(ev)
+    }
+
+    // ---------- what Moyna is doing ----------
+
+    private fun show(s: MoynaState, d: String?) {
+        val changed = s != state
+        state = s; detail = d
+        if (changed && s != MoynaState.IDLE) lastTouch = SystemClock.elapsedRealtime()   // an event brightens the screen
+        status.text = when (s) {
+            MoynaState.IDLE -> "\"ময়না\" বলে ডাকুন"
+            MoynaState.SLEEPING -> "ময়না ঘুমাচ্ছে, ছুঁয়ে জাগান\n${d ?: ""}"
+            else -> ""
+        }
+        talkText.text = when (s) {
+            MoynaState.LISTENING -> "বলুন...\nময়না শুনছে"
+            MoynaState.THINKING -> if (d == "search") "একটু দেখে\nনিচ্ছি..." else "একটু\nভাবছি..."
+            MoynaState.SPEAKING -> "ময়না\nবলছে..."
+            MoynaState.ERROR -> d ?: "সমস্যা হয়েছে"
+            MoynaState.TEST -> d ?: "পরীক্ষা চলছে"
+            else -> ""
+        }
+        talkText.textSize = if (s == MoynaState.ERROR || s == MoynaState.TEST) 28f else 46f
+        // The red button shows only while Moyna is making sound (talking, or the look-up sounds).
+        stop.visibility = if (s == MoynaState.SPEAKING || s == MoynaState.THINKING && d == "search") View.VISIBLE else View.INVISIBLE
+        // The quiet tile lights up while she is asleep.
+        tileViews["quiet"]?.let {
+            (it.background as GradientDrawable).setColor(if (s == MoynaState.SLEEPING) Color.rgb(90, 80, 160) else Color.argb(38, 255, 255, 255))
+        }
+        applyLook()
     }
 
     /** Green normally, amber when close to the daily amount, red past it or after a quota refusal. */
@@ -100,37 +323,22 @@ class MainActivity : Activity() {
         usageFill.requestLayout()
     }
 
-    override fun onStop() {
-        MoynaHub.listener = null
-        MoynaHub.usageListener = null
-        super.onStop()
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, results)
-        if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED) MoynaService.start(this)
-    }
-
-    // The red stop sign stops Moyna and puts her to sleep. Tapping anywhere else starts
-    // listening (or, while Moyna talks, cuts her answer short; while asleep, wakes her).
-    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (ev.action == MotionEvent.ACTION_DOWN) {
-            val r = android.graphics.Rect()
-            val onStop = stop.visibility == android.view.View.VISIBLE &&
-                stop.getGlobalVisibleRect(r) && r.contains(ev.rawX.toInt(), ev.rawY.toInt())
-            if (onStop) MoynaHub.engine?.stopButton() else MoynaHub.engine?.trigger()
-        }
-        return true
-    }
+    // ---------- tests started from the PC (see README) ----------
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleTestIntent(intent)
     }
 
-    // Wake word test, started from the PC (see README):
     //   adb shell am start -n app.moyna/.MainActivity --ei test_prompts 20
     private fun handleTestIntent(intent: Intent?) {
+        // --es look night|day|auto : force the night or day look (for screenshots), or go back to the sensor.
+        intent?.getStringExtra("look")?.let {
+            intent.removeExtra("look")
+            forceNight = when (it) { "night" -> true; "day" -> false; else -> null }
+            if (it == "night") lastTouch = 0
+            root.post { applyLook() }
+        }
         if (intent?.getBooleanExtra("echo_test", false) == true) {
             intent.removeExtra("echo_test")
             root.postDelayed({ MoynaHub.engine?.echoTest(getExternalFilesDir(null)!!) }, 500)
@@ -145,26 +353,5 @@ class MainActivity : Activity() {
                 MoynaHub.engine?.startTest(secs, java.io.File(getExternalFilesDir(null), "wake-test.pcm"), prompts, src)
             }, 500)
         }
-    }
-
-    private fun show(s: MoynaState, detail: String?) {
-        val (bigText, smallText, color) = when (s) {
-            MoynaState.IDLE -> Triple("ময়না শুনছে না", "\"ময়না\" বলে ডাকুন\nবা স্ক্রিনে ছুঁয়ে দিন", Color.rgb(25, 55, 50))
-            MoynaState.LISTENING -> Triple("বলুন...", "ময়না শুনছে", Color.rgb(20, 110, 70))
-            MoynaState.THINKING -> Triple(if (detail == "search") "একটু দেখে নিচ্ছি..." else "একটু ভাবছি...", "", Color.rgb(150, 100, 20))
-            MoynaState.SPEAKING -> Triple("ময়না বলছে...", "\"ময়না থামো\" বলুন বা লাল বোতাম চাপুন", Color.rgb(30, 80, 150))
-            MoynaState.ERROR -> Triple(detail ?: "সমস্যা হয়েছে", "আবার চেষ্টা করতে ছুঁয়ে দিন", Color.rgb(140, 40, 40))
-            MoynaState.SLEEPING -> Triple("ময়না ঘুমাচ্ছে", "ছুঁয়ে জাগান\n\n${detail ?: ""}", Color.rgb(35, 35, 55))
-            MoynaState.TEST -> Triple("পরীক্ষা চলছে", detail ?: "", Color.rgb(90, 40, 110))
-        }
-        big.text = bigText
-        small.text = smallText
-        root.setBackgroundColor(color)
-        val active = s == MoynaState.LISTENING || s == MoynaState.THINKING || s == MoynaState.SPEAKING || s == MoynaState.ERROR
-        stop.visibility = if (active) android.view.View.VISIBLE else android.view.View.GONE
-        // Keep the screen on only while something is happening; otherwise let it sleep.
-        // (Also while asleep, so she can always see why Moyna is not answering.)
-        if (active || s == MoynaState.TEST || s == MoynaState.SLEEPING) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 }

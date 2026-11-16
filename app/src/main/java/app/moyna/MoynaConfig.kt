@@ -1,10 +1,42 @@
 package app.moyna
 
+/** One tile on the hub screen: a big emoji with a Bengali label. An empty id is a reserved empty slot. */
+data class Tile(val id: String, val emoji: String, val label: String)
+
 /**
  * ALL the easy-to-change settings for Moyna live in this one file.
  * After changing anything here, rebuild and reinstall (see README).
  */
 object MoynaConfig {
+
+    // ---- Hub screen ----
+    // The tiles, in order, two per row. Add, remove or reorder lines here.
+    // Known ids: bus, prayer, weather, talk (same as saying "Moyna"), quiet (sleep 1 hour). "" = empty slot.
+    val TILES = listOf(
+        Tile("bus", "🚌", "বাস"),
+        Tile("prayer", "🕌", "নামাজ"),
+        Tile("weather", "🌦️", "আবহাওয়া"),
+        Tile("talk", "🎤", "ময়না"),
+        Tile("quiet", "😴", "চুপ"),
+        Tile("", "", ""),
+    )
+    // The quiet tile puts Moyna to sleep for this many minutes (tap it again to wake her).
+    const val QUIET_TILE_MINUTES = 60
+
+    // Day / night, from the phone's light sensor (lux). Night when at or below NIGHT_LUX for 20 s,
+    // day again at or above DAY_LUX. If the sensor gives no reading, the clock decides instead.
+    const val NIGHT_LUX = 2f
+    const val DAY_LUX = 8f
+    const val NIGHT_FROM_HOUR = 22
+    const val NIGHT_UNTIL_HOUR = 6
+    // In the day the screen dims after this long without a touch; at night it goes dark after this long.
+    const val IDLE_DIM_SECONDS = 120
+    const val NIGHT_AWAKE_SECONDS = 30
+    // Screen brightness, 0.0 to 1.0: in use / idle in the day / touched at night / dark at night.
+    const val BRIGHT_DAY = 0.9f
+    const val BRIGHT_DAY_IDLE = 0.25f
+    const val BRIGHT_NIGHT_AWAKE = 0.25f
+    const val BRIGHT_NIGHT = 0.01f
 
     // Which Gemini Live model to use. Must be a model that supports the Live API.
     // "gemini-3.1-flash-live-preview" works on the free tier.
