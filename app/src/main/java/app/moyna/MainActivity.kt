@@ -2,6 +2,7 @@ package app.moyna
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -30,8 +31,8 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * The home hub on the wall: clock on top, a status line, and big tiles (see MoynaConfig.TILES).
- * Moyna itself runs in MoynaService; this screen only shows things and passes taps on.
+ * The home hub on the wall: clock on top, a status line, big tiles (see MoynaConfig.TILES) and a
+ * weather strip. Moyna itself runs in MoynaService; this screen only shows things and passes taps on.
  */
 class MainActivity : Activity(), SensorEventListener {
 
@@ -48,7 +49,13 @@ class MainActivity : Activity(), SensorEventListener {
     private lateinit var usageFill: View
     private lateinit var usageRest: View
     private val tileViews = HashMap<String, LinearLayout>()
+    private val tileEmoji = HashMap<String, TextView>()
     private val tileSubs = HashMap<String, TextView>()
+    // Weather strip
+    private var wxNow: TextView? = null
+    private var wxTemp: TextView? = null
+    private var wxRange: TextView? = null
+    private val wxHours = ArrayList<Triple<TextView, TextView, TextView>>()   // hour, icon, temperature
 
     private var state = MoynaState.IDLE
     private var detail: String? = null
@@ -62,27 +69,36 @@ class MainActivity : Activity(), SensorEventListener {
         setTurnScreenOn(true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)   // a wall clock never sleeps; it dims
 
-        // ----- top: clock (English), date, Bangladesh time -----
-        clock = text(60f, bold = true)
-        date = text(21f)
-        dhaka = text(18f).apply { setPadding(0, dp(2), 0, 0) }
+        // ----- top: clock (English), then the date and Bangladesh time, both large -----
+        clock = text(46f, bold = true)
+        date = text(29f, bold = true)
+        dhaka = text(27f, bold = true)
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(8), dp(14), dp(8), dp(6))
+            setPadding(dp(6), dp(8), dp(6), dp(2))
             addView(clock); addView(date); addView(dhaka)
         }
 
         // ----- status line (Bengali) -----
-        status = text(21f).apply { setPadding(dp(8), dp(6), dp(8), dp(8)) }
+        status = text(22f).apply { setPadding(dp(8), dp(4), dp(8), dp(4)) }
 
-        // ----- tiles: 2 columns, as many rows as MoynaConfig.TILES needs -----
-        grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(6), 0, dp(6), dp(12)) }
-        MoynaConfig.TILES.chunked(2).forEach { pair ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            pair.forEach { row.addView(tileView(it), LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(dp(5), dp(5), dp(5), dp(5)) }) }
-            if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, -1, 1f))
-            grid.addView(row, LinearLayout.LayoutParams(-1, 0, 1f))
+        // ----- tiles, two per row; the weather tile is a wide strip of its own -----
+        grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(6), 0, dp(6), dp(10)) }
+        val margin = dp(4)
+        fun cell(v: View) = LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(margin, margin, margin, margin) }
+        var row: LinearLayout? = null
+        fun flush() { row?.let { if (it.childCount == 1) it.addView(View(this), cell(View(this))); grid.addView(it, LinearLayout.LayoutParams(-1, 0, 1f)) }; row = null }
+        for (t in MoynaConfig.TILES) {
+            if (t.id == "weather") {
+                flush()
+                grid.addView(weatherStrip(), LinearLayout.LayoutParams(-1, 0, 1.1f).apply { setMargins(margin, margin, margin, margin) })
+                continue
+            }
+            val r = row ?: LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }.also { row = it }
+            r.addView(tileView(t), cell(r))
+            if (r.childCount == 2) flush()
         }
+        flush()
 
         // ----- conversation panel: big words, and the red stop button while Moyna makes sound -----
         talkText = text(46f, bold = true)
@@ -96,7 +112,7 @@ class MainActivity : Activity(), SensorEventListener {
         talk = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; visibility = View.GONE
             addView(talkText, LinearLayout.LayoutParams(-1, -2))
-            addView(stop, LinearLayout.LayoutParams(dp(170), dp(170)).apply { topMargin = dp(36) })
+            addView(stop, LinearLayout.LayoutParams(dp(170), dp(170)).apply { topMargin = dp(30) })
         }
 
         val column = LinearLayout(this).apply {
@@ -117,35 +133,91 @@ class MainActivity : Activity(), SensorEventListener {
         }
         root = FrameLayout(this).apply {
             addView(column, FrameLayout.LayoutParams(-1, -1))
-            addView(usageBar, FrameLayout.LayoutParams(-1, dp(5), Gravity.BOTTOM))
+            addView(usageBar, FrameLayout.LayoutParams(-1, dp(4), Gravity.BOTTOM))
         }
         setContentView(root)
         handleTestIntent(intent)
     }
 
     private fun text(size: Float, bold: Boolean = false) = TextView(this).apply {
-        textSize = size; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+        textSize = size; gravity = Gravity.CENTER; setTextColor(Color.WHITE); includeFontPadding = false
         if (bold) typeface = Typeface.DEFAULT_BOLD
     }
 
-    /** One tile: big emoji, Bengali label, and a small line for live info (bus minutes, temperature). */
+    private fun tileBackground() = GradientDrawable().apply { cornerRadius = dp(18).toFloat(); setColor(Color.argb(38, 255, 255, 255)) }
+
+    /** One tile: big emoji, Bengali label, and a line or two of live info (bus minutes, next prayer). */
     private fun tileView(t: Tile): View {
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
-            background = GradientDrawable().apply { cornerRadius = dp(18).toFloat(); setColor(Color.argb(if (t.id.isEmpty()) 12 else 38, 255, 255, 255)) }
-        }
-        if (t.id.isEmpty()) return box                       // reserved slot: a faint empty tile
-        val sub = text(17f).apply { setTextColor(Color.rgb(255, 225, 150)); visibility = View.GONE }
-        box.addView(text(46f).apply { text = t.emoji })
-        box.addView(text(24f, bold = true).apply { text = t.label })
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = tileBackground() }
+        if (t.id.isEmpty()) { box.alpha = 0.3f; return box }   // reserved slot: a faint empty tile
+        val emoji = text(40f).apply { text = t.emoji }
+        val sub = text(19f, bold = true).apply { setTextColor(Color.rgb(255, 225, 150)); visibility = View.GONE; setPadding(0, dp(2), 0, 0) }
+        box.addView(emoji)
+        box.addView(text(25f, bold = true).apply { text = t.label; setPadding(0, dp(2), 0, 0) })
         box.addView(sub)
         box.setOnClickListener {
             box.alpha = 0.5f; box.animate().alpha(1f).setDuration(350).start()
             MoynaHub.engine?.tileTapped(t.id)
         }
-        tileViews[t.id] = box; tileSubs[t.id] = sub
+        tileViews[t.id] = box; tileEmoji[t.id] = emoji; tileSubs[t.id] = sub
         return box
     }
+
+    /** The weather strip: today on top (picture, temperature, high and low), the next 7 hours below. */
+    private fun weatherStrip(): View {
+        val now = text(38f); val temp = text(36f, bold = true); val range = text(19f).apply { setTextColor(Color.rgb(255, 225, 150)) }
+        wxNow = now; wxTemp = temp; wxRange = range
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
+            addView(now); addView(temp, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(10); rightMargin = dp(14) }); addView(range)
+        }
+        val hours = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        repeat(7) {
+            val h = text(15f).apply { setTextColor(Color.rgb(200, 215, 215)) }; val i = text(24f); val t = text(17f, bold = true)
+            wxHours.add(Triple(h, i, t))
+            hours.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                addView(h); addView(i); addView(t)
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = tileBackground()
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            addView(head, LinearLayout.LayoutParams(-1, -2)); addView(hours, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+            setOnClickListener { alpha = 0.5f; animate().alpha(1f).setDuration(350).start(); MoynaHub.engine?.tileTapped("weather") }
+        }
+        tileViews["weather"] = box
+        return box
+    }
+
+    /** Put the latest bus, prayer and weather information on the tiles. */
+    private fun fillTiles() {
+        tileSubs["bus"]?.let {
+            val fresh = Bus.ageSeconds() <= 180
+            it.text = if (fresh) Bus.tileText() else ""; it.visibility = if (fresh) View.VISIBLE else View.GONE
+            tileEmoji["bus"]?.textSize = if (fresh) 24f else 40f
+        }
+        tileSubs["prayer"]?.let {
+            val t = Prayer.tileText()
+            it.text = t; it.visibility = if (t.isEmpty()) View.GONE else View.VISIBLE
+            tileEmoji["prayer"]?.textSize = if (t.isEmpty()) 40f else 34f
+        }
+        if (Weather.has()) {
+            wxNow?.text = Weather.icon(Weather.code, Weather.isDay)
+            wxTemp?.text = "${Weather.tempF}°"
+            wxRange?.text = "↑${Weather.highF}°  ↓${Weather.lowF}°"
+            val hours = Weather.hours
+            wxHours.forEachIndexed { i, (h, icon, t) ->
+                val w = hours.getOrNull(i)
+                h.text = w?.time?.format(hourFmt)?.lowercase(Locale.ENGLISH) ?: ""
+                icon.text = if (w == null) "" else Weather.icon(w.code, w.isDay)
+                t.text = if (w == null) "" else "${w.tempF}°"
+            }
+        } else {
+            wxNow?.text = "🌦️"; wxTemp?.text = "আবহাওয়া"; wxRange?.text = ""
+        }
+    }
+    private val hourFmt = DateTimeFormatter.ofPattern("ha", Locale.ENGLISH)
 
     // ---------- life cycle ----------
 
@@ -155,6 +227,8 @@ class MainActivity : Activity(), SensorEventListener {
         show(MoynaHub.state, MoynaHub.detail)
         MoynaHub.usageListener = { u, alert -> runOnUiThread { showUsage(u, alert) } }
         showUsage(MoynaHub.usage, MoynaHub.usageAlert)
+        HubData.onChange = { runOnUiThread { fillTiles() } }
+        Prayer.load(applicationContext)
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             MoynaService.start(this)   // (re)start while visible, so the mic is allowed in the background
         } else {
@@ -174,6 +248,7 @@ class MainActivity : Activity(), SensorEventListener {
     override fun onStop() {
         MoynaHub.listener = null
         MoynaHub.usageListener = null
+        HubData.onChange = null
         getSystemService(SensorManager::class.java).unregisterListener(this)
         ui.removeCallbacks(tick)
         super.onStop()
@@ -184,7 +259,7 @@ class MainActivity : Activity(), SensorEventListener {
         if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED) MoynaService.start(this)
     }
 
-    // ---------- clock ----------
+    // ---------- clock, and keeping the tiles fresh ----------
 
     private val timeFmt = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
     private val dateFmt = DateTimeFormatter.ofPattern("EEEE, MMM d", Locale.ENGLISH)
@@ -196,6 +271,12 @@ class MainActivity : Activity(), SensorEventListener {
             date.text = now.format(dateFmt)
             dhaka.text = "Bangladesh " + now.withZoneSameInstant(ZoneId.of("Asia/Dhaka")).format(timeFmt)
             applyLook()
+            // Live data only while the screen is lit in the daytime: no polling in the dark night look.
+            if (!(night && !awake())) {
+                if (Bus.ready() && Bus.ageSeconds() >= MoynaConfig.BUS_REFRESH_SECONDS) Bus.refresh()
+                if (Weather.ready() && Weather.ageMinutes() >= MoynaConfig.WEATHER_REFRESH_MINUTES) Weather.refresh()
+            }
+            fillTiles()
             ui.postDelayed(this, 5_000)
         }
     }
@@ -256,7 +337,7 @@ class MainActivity : Activity(), SensorEventListener {
 
         root.setBackgroundColor(if (darkLook) Color.BLACK else background())
         val ink = if (darkLook) Color.rgb(120, 120, 120) else Color.WHITE
-        clock.setTextColor(ink); date.setTextColor(ink); dhaka.setTextColor(if (darkLook) ink else Color.rgb(190, 225, 215))
+        clock.setTextColor(ink); date.setTextColor(ink); dhaka.setTextColor(if (darkLook) ink else Color.rgb(170, 235, 215))
         status.setTextColor(ink)
         status.visibility = if (darkLook && state == MoynaState.IDLE) View.INVISIBLE else View.VISIBLE
         grid.visibility = if (inTalk) View.GONE else if (darkLook) View.INVISIBLE else View.VISIBLE
@@ -277,11 +358,13 @@ class MainActivity : Activity(), SensorEventListener {
     private var swallow = false
     private val openAdmin = Runnable { askPin() }
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        // Hidden admin screen: hold the top-left corner for 5 seconds.
+        // Hidden admin screen: keep a finger on the big clock for 10 seconds.
         when (ev.action) {
-            MotionEvent.ACTION_DOWN -> if (ev.x < dp(70) && ev.y < dp(70)) ui.postDelayed(openAdmin, 5_000)
+            MotionEvent.ACTION_DOWN -> {
+                val r = android.graphics.Rect()
+                if (clock.getGlobalVisibleRect(r) && r.contains(ev.rawX.toInt(), ev.rawY.toInt())) ui.postDelayed(openAdmin, 10_000)
+            }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> ui.removeCallbacks(openAdmin)
-            MotionEvent.ACTION_MOVE -> if (ev.x > dp(90) || ev.y > dp(90)) ui.removeCallbacks(openAdmin)
         }
         if (ev.action == MotionEvent.ACTION_DOWN) {
             val wasDark = night && !awake()
@@ -305,14 +388,14 @@ class MainActivity : Activity(), SensorEventListener {
         }
         talkText.text = when (s) {
             MoynaState.LISTENING -> "বলুন...\nময়না শুনছে"
-            MoynaState.THINKING -> if (d == "search") "একটু দেখে\nনিচ্ছি..." else "একটু\nভাবছি..."
-            MoynaState.SPEAKING -> "ময়না\nবলছে..."
+            MoynaState.THINKING -> when (d) { "search" -> "একটু দেখে\nনিচ্ছি..."; "tile" -> "বলছি..."; else -> "একটু\nভাবছি..." }
+            MoynaState.SPEAKING -> if (d == "azan") "🕌\nআজান" else "ময়না\nবলছে..."
             MoynaState.ERROR -> d ?: "সমস্যা হয়েছে"
             MoynaState.TEST -> d ?: "পরীক্ষা চলছে"
             else -> ""
         }
         talkText.textSize = if (s == MoynaState.ERROR || s == MoynaState.TEST) 28f else 46f
-        // The red button shows only while Moyna is making sound (talking, or the look-up sounds).
+        // The red button shows only while Moyna is making sound (talking, the azan, or the look-up sounds).
         stop.visibility = if (s == MoynaState.SPEAKING || s == MoynaState.THINKING && d == "search") View.VISIBLE else View.INVISIBLE
         // The quiet tile lights up while she is asleep.
         tileViews["quiet"]?.let {
@@ -343,44 +426,85 @@ class MainActivity : Activity(), SensorEventListener {
             android.widget.Toast.makeText(this, "Admin screen is closed: set ADMIN_PIN in personal.properties and rebuild.", android.widget.Toast.LENGTH_LONG).show()
             return
         }
-        val box = android.widget.EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            textSize = 28f; gravity = Gravity.CENTER
+        // Our own number pad, because the phone's keyboard may not open in kiosk mode.
+        var typed = ""
+        val dots = TextView(this).apply { textSize = 34f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); text = "- - - -" }
+        val pad = android.widget.GridLayout(this).apply { columnCount = 3 }
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(16), dp(16), dp(16), dp(16))
+            addView(dots, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) }); addView(pad, LinearLayout.LayoutParams(-2, -2))
         }
-        android.app.AlertDialog.Builder(this).setTitle("Admin PIN").setView(box)
-            .setPositiveButton("OK") { _, _ ->
-                if (box.text.toString() == pin) showAdmin()
+        val dialog = android.app.AlertDialog.Builder(this).setTitle("Admin PIN").setView(page).setNegativeButton("Cancel", null).create()
+        fun press(key: String) {
+            typed = if (key == "⌫") typed.dropLast(1) else typed + key
+            dots.text = (typed.map { "●" } + List((4 - typed.length).coerceAtLeast(0)) { "-" }).joinToString(" ")
+            if (typed.length >= pin.length) {
+                dialog.dismiss()
+                if (typed == pin) showAdmin()
                 else { Log.i("Moyna", "admin: wrong PIN"); android.widget.Toast.makeText(this, "Wrong PIN", android.widget.Toast.LENGTH_SHORT).show() }
             }
-            .setNegativeButton("Cancel", null).show()
+        }
+        for (key in listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫")) {
+            pad.addView(android.widget.Button(this).apply {
+                text = key; textSize = 24f; visibility = if (key.isEmpty()) View.INVISIBLE else View.VISIBLE
+                setOnClickListener { press(key) }
+            }, android.widget.GridLayout.LayoutParams().apply { width = dp(76); height = dp(60) })
+        }
+        dialog.show()
     }
 
     private fun showAdmin() {
         Log.i("Moyna", "admin screen opened")
+        val prefs = getSharedPreferences("moyna", Context.MODE_PRIVATE)
         val pad = dp(14)
         val info = TextView(this).apply { textSize = 15f; setTextColor(Color.WHITE); setPadding(0, 0, 0, pad) }
-        val log = TextView(this).apply { textSize = 11f; setTextColor(Color.rgb(200, 220, 200)); typeface = Typeface.MONOSPACE }
-        val buttons = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val log = TextView(this).apply { textSize = 12f; setTextColor(Color.rgb(205, 225, 205)); setPadding(0, pad, 0, 0) }
+        val controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(pad, pad, pad, pad); setBackgroundColor(Color.rgb(20, 24, 28))
-            addView(info); addView(buttons); addView(log)
+            addView(info); addView(controls); addView(log)
         }
-        val scroll = android.widget.ScrollView(this).apply { addView(page) }
-        val dialog = android.app.Dialog(this, android.R.style.Theme_Material_NoActionBar_Fullscreen).apply { setContentView(scroll) }
+        val dialog = android.app.Dialog(this, android.R.style.Theme_Material_NoActionBar_Fullscreen)
+        dialog.setContentView(android.widget.ScrollView(this).apply { addView(page) })
+
         fun refresh() {
-            val owner = Kiosk.isOwner(this)
-            info.text = "Moyna ${BuildConfig.VERSION_NAME}\n" +
-                "Talk time today: ${(MoynaHub.usage * MoynaConfig.DAILY_TALK_MINUTES).toInt()} min\n" +
-                "Light sensor: ${lux.toInt()} lux (${if (night) "night" else "day"} look)\n" +
-                "Kiosk: " + when {
-                    !owner -> "not set up (Moyna is not the device owner)"
-                    Kiosk.isOff(this) -> "OFF"
-                    else -> "ON"
-                }
+            val ev = Events.today()
+            fun count(type: String) = ev.count { it.optString("type") == type }
+            val answers = ev.filter { it.optString("type") == "answer_start" && !it.optBoolean("tile") }.map { it.optLong("ms") }
+            val today = Prayer.day(java.time.LocalDate.now())
+            val left = Prayer.calendarDaysLeft()
+            info.text = buildString {
+                append("Moyna ${BuildConfig.VERSION_NAME}\n\n")
+                if (left != null && left <= 7) append("⚠ ADD NEXT MONTH'S PRAYER CALENDAR (${if (left < 0) "ran out" else "$left days left"})\n\n")
+                append("TODAY\n")
+                append("Wakes: ${count("wake")}   Questions: ${count("turn")}   Tile taps: ${count("tile")}\n")
+                append("Look-ups: ${count("look_up")}   Azans: ${count("azan")}   Stops: ${count("stop")}   Errors: ${count("error")}\n")
+                append("Average answer time: ${if (answers.isEmpty()) "—" else "%.1f s".format(answers.average() / 1000)}\n")
+                append("Talk time: ${(MoynaHub.usage * MoynaConfig.DAILY_TALK_MINUTES).toInt()} min\n\n")
+                if (today != null) append("Prayer times${if (today.calculated) " (CALCULATED, no calendar)" else " (calendar)"}: " +
+                    "Fajr ${today.fajr}, Zuhr ${today.zuhr}, Asr ${today.asr}, Maghrib ${today.maghrib}, Isha ${today.isha}\n")
+                append("Calendar ends: ${Prayer.lastCalendarDate ?: "no calendar loaded"}\n")
+                append("Light: ${lux.toInt()} lux (${if (night) "night" else "day"} look)\n")
+                append("Kiosk: " + when { !Kiosk.isOwner(this@MainActivity) -> "not set up"; Kiosk.isOff(this@MainActivity) -> "OFF"; else -> "ON" })
+            }
+            log.text = "TODAY'S EVENTS (newest first)\n\n" + ev.reversed().take(300).joinToString("\n") { e ->
+                val t = e.optString("t").substringAfter('T')
+                val rest = e.keys().asSequence().filter { it != "t" && it != "type" }.joinToString("  ") { "$it=${e.opt(it)}" }
+                "$t  ${e.optString("type")}  $rest"
+            }
         }
-        fun button(label: String, action: () -> Unit) = buttons.addView(android.widget.Button(this).apply {
+        fun button(label: String, action: () -> Unit) = controls.addView(android.widget.Button(this).apply {
             text = label; isAllCaps = false; setOnClickListener { action(); refresh() }
         })
+        controls.addView(TextView(this).apply { text = "Azan on / off"; textSize = 15f; setTextColor(Color.WHITE) })
+        for ((key, name) in listOf("fajr" to "Fajr", "zuhr" to "Zuhr", "asr" to "Asr", "maghrib" to "Maghrib", "isha" to "Isha")) {
+            controls.addView(android.widget.CheckBox(this).apply {
+                text = name; setTextColor(Color.WHITE); isChecked = prefs.getBoolean("azan_$key", true)
+                setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("azan_$key", on).apply(); Log.i("Moyna", "admin: azan $key ${if (on) "on" else "off"}") }
+            })
+        }
+        button("Play the azan now (test)") { dialog.dismiss(); MoynaHub.engine?.playAzan("test") }
+        button("Refresh") { }
         button("Exit kiosk (use the phone normally)") {
             Kiosk.exit(this)
             startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -388,15 +512,6 @@ class MainActivity : Activity(), SensorEventListener {
         button("Turn kiosk back on") { Kiosk.turnOn(this) }
         button("Close") { dialog.dismiss() }
         refresh()
-        // Recent activity, newest first (the phone's own temporary log; Phase 5 adds a proper events log).
-        Thread {
-            val lines = try {
-                Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "400", "-s", "Moyna:*"))
-                    .inputStream.bufferedReader().readLines().filter { "Moyna" in it && "wake health" !in it }
-                    .map { it.substring(6).replace(Regex("I/Moyna\\s*\\(\\s*\\d+\\): "), "") }.reversed()
-            } catch (e: Exception) { listOf("could not read the log: ${e.message}") }
-            runOnUiThread { log.text = "Recent activity (newest first)\n\n" + lines.joinToString("\n") }
-        }.start()
         dialog.show()
     }
 
@@ -416,6 +531,9 @@ class MainActivity : Activity(), SensorEventListener {
             if (it == "night") lastTouch = 0
             root.post { applyLook() }
         }
+        // --es azan test : play the azan now.   --ez admin true : open the admin screen (asks for the PIN).
+        intent?.getStringExtra("azan")?.let { intent.removeExtra("azan"); MoynaHub.engine?.playAzan(it) }
+        if (intent?.getBooleanExtra("admin", false) == true) { intent.removeExtra("admin"); root.post { askPin() } }
         if (intent?.getBooleanExtra("echo_test", false) == true) {
             intent.removeExtra("echo_test")
             root.postDelayed({ MoynaHub.engine?.echoTest(getExternalFilesDir(null)!!) }, 500)

@@ -15,10 +15,9 @@ object MoynaConfig {
     val TILES = listOf(
         Tile("bus", "🚌", "বাস"),
         Tile("prayer", "🕌", "নামাজ"),
-        Tile("weather", "🌦️", "আবহাওয়া"),
         Tile("talk", "🎤", "ময়না"),
         Tile("quiet", "😴", "চুপ"),
-        Tile("", "", ""),
+        Tile("weather", "🌦️", "আবহাওয়া"),     // drawn as a wide strip: now, plus the next 7 hours
     )
     // The quiet tile puts Moyna to sleep for this many minutes (tap it again to wake her).
     const val QUIET_TILE_MINUTES = 60
@@ -33,10 +32,23 @@ object MoynaConfig {
     const val IDLE_DIM_SECONDS = 120
     const val NIGHT_AWAKE_SECONDS = 30
     // Screen brightness, 0.0 to 1.0: in use / idle in the day / touched at night / dark at night.
-    const val BRIGHT_DAY = 0.9f
-    const val BRIGHT_DAY_IDLE = 0.25f
-    const val BRIGHT_NIGHT_AWAKE = 0.25f
+    const val BRIGHT_DAY = 0.55f
+    const val BRIGHT_DAY_IDLE = 0.12f
+    const val BRIGHT_NIGHT_AWAKE = 0.15f
     const val BRIGHT_NIGHT = 0.01f
+
+    // ---- Bus, weather, prayer ----
+    // The bus tile refreshes this often while the screen is lit in the daytime (never at night).
+    const val BUS_REFRESH_SECONDS = 60
+    const val WEATHER_REFRESH_MINUTES = 15
+    // Azan loudness, 0.0 to 1.0 of the phone's full volume. It is a living room: keep it low.
+    const val AZAN_VOLUME = 0.3f
+    // The azan waits for a conversation to end, but is skipped if it would start later than this.
+    const val AZAN_MAX_LATE_SECONDS = 150
+    // For months with no calendar file, prayer times are calculated for this spot (New York City's
+    // centre, which is what the wall calendar uses) with the North America (ISNA) method and Hanafi Asr.
+    const val PRAYER_CALC_LAT = 40.7128
+    const val PRAYER_CALC_LON = -74.0060
 
     // Which Gemini Live model to use. Must be a model that supports the Live API.
     // "gemini-3.1-flash-live-preview" works on the free tier.
@@ -144,8 +156,11 @@ object MoynaConfig {
           the minutes she says (60 if she gives no time; for "tonight" use minutes until 7 in
           the morning). Never call go_to_sleep for TV sound or anything not clearly said to you.
         - If she asks for louder or quieter sound, call set_volume.
-        - For anything current or changing (weather, news, cricket and other sports scores,
-          prices, prayer times, opening hours, events), call look_up with a short English question
+        - For when her bus comes, call get_bus_times. For the weather where she lives, call
+          get_weather. For prayer (namaz) times, call get_prayer_times. These are instant; use
+          them instead of look_up, and say only what she asked for.
+        - For anything else current or changing (news, cricket and other sports scores, prices,
+          weather in another place, opening hours, events), call look_up with a short English question
           that includes the place (she lives in the city given below unless she says otherwise).
           Then give her only the answer, in one or two short sentences. Never guess current
           facts. If look_up fails, say only that you can't check right now.

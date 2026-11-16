@@ -48,6 +48,8 @@ class MoynaService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Events.init(applicationContext)
+        Events.log("app_start", "version" to BuildConfig.VERSION_NAME)
         goForeground()
         // Keep the processor and Wi-Fi awake. The phone is always plugged in, so this costs nothing.
         wakeLock = getSystemService(PowerManager::class.java)

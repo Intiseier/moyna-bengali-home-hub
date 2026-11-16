@@ -73,6 +73,13 @@ class MoynaEngine(
     private val bargeIn = ArrayList<ByteArray>()  // loud chunks heard while Moyna talks
 
     private var exchanges = 0               // answers Moyna has given in this conversation
+    private var readText: String? = null    // set while Moyna only reads one sentence aloud (a tile tap)
+    private var tileBusy = false            // a tile is fetching fresh data
+    private var thinkingAt = 0L             // when she stopped talking (to measure how fast Moyna answers)
+    private var answeredThisTurn = false
+    private val turnHeard = StringBuilder() // what Gemini heard / said this turn, for the events log
+    private val turnSaid = StringBuilder()
+    private var azan: android.media.MediaPlayer? = null
     private var lookingUp = false           // a look_up is running: play the "searching" sounds, mute the mic to Gemini
 
     // While a look-up runs: a soft tick every 1.2 s, and one "please wait a bit more" after 8 s.
@@ -97,6 +104,8 @@ class MoynaEngine(
     fun start() = main.post {
         mic.start(echoCancel = client != null && MoynaConfig.ECHO_CANCEL)
         main.removeCallbacks(usageTick); usageTick.run()
+        Prayer.load(context)
+        main.removeCallbacks(prayerTick); main.postDelayed(prayerTick, 5_000)
     }
 
     // ---------- talk-time today (the thin bar at the bottom of the screen) ----------
@@ -136,7 +145,7 @@ class MoynaEngine(
         when (state) {
             MoynaState.IDLE, MoynaState.ERROR -> startConversation("tap")
             MoynaState.SLEEPING -> { main.removeCallbacks(sleepTick); startConversation("tap while sleeping") }
-            MoynaState.SPEAKING -> stopSpeaking()
+            MoynaState.SPEAKING -> if (azan != null) stopAzan("tap") else stopSpeaking()
             else -> {}
         }
     }
@@ -144,15 +153,115 @@ class MoynaEngine(
     /** A tile on the hub screen was tapped. */
     fun tileTapped(id: String) = main.post {
         Log.i(tag, "tile tapped: $id")
+        Events.log("tile", "id" to id)
         when (id) {
             "talk" -> trigger()
             "quiet" ->
                 if (state == MoynaState.SLEEPING) {
                     Log.i(tag, "woken by the quiet tile")
+                    Events.log("wake_up", "by" to "quiet tile")
                     main.removeCallbacks(sleepTick); wake.clear(); player.play(Sounds.start); setState(MoynaState.IDLE)
                 } else stopAndSleep(MoynaConfig.QUIET_TILE_MINUTES, "quiet tile")
-            else -> player.play(Sounds.error)   // bus, prayer, weather: coming in Phase 4
+            "bus" -> freshThenSay("bus", Bus.ready(), { Bus.ageSeconds() <= 90 }, Bus::refresh) { Bus.sentence() }
+            "weather" -> freshThenSay("weather", Weather.ready(), { Weather.ageMinutes() <= 30 }, Weather::refresh) { Weather.sentence() }
+            "prayer" -> sayLine(Prayer.sentence(), "prayer")
+            else -> player.play(Sounds.error)
         }
+    }
+
+    /** Speak a tile's sentence at once if its data is fresh; otherwise fetch first (a few seconds). */
+    private fun freshThenSay(what: String, ready: Boolean, fresh: () -> Boolean, refresh: ((Boolean) -> Unit) -> Unit, sentence: () -> String) {
+        if (!ready) { Log.w(tag, "$what tile is not set up (missing key, stops or home location)"); player.play(Sounds.error); return }
+        if (fresh()) { sayLine(sentence(), what); return }
+        if (tileBusy) return
+        tileBusy = true
+        refresh { ok -> main.post {
+            tileBusy = false
+            if (ok) sayLine(sentence(), what)
+            else if (client == null) { Events.log("error", "what" to "$what data"); fail(if (isOnline()) "problem" else "offline", "এখন জানা যাচ্ছে না") }
+        } }
+    }
+
+    /** Say one ready-made Bengali sentence in Moyna's voice (tile taps). No listening afterwards. */
+    private fun sayLine(text: String, why: String) {
+        if (client != null || state == MoynaState.TEST) return
+        Log.i(tag, "saying ($why): $text")
+        Events.log("tile_say", "tile" to why, "text" to text)
+        if (state == MoynaState.SLEEPING) main.removeCallbacks(sleepTick)
+        stopAzan("tile")
+        onWantScreen()
+        if (!isOnline()) { Log.w(tag, "no internet"); fail("offline", "ইন্টারনেট কাজ করছে না"); return }
+        session++
+        ready = false; retried = false; pending.clear(); modelTurnOpen = false; dropRestOfAnswer = false; exchanges = 0
+        readText = text
+        connect()
+        talkStartedAt = SystemClock.elapsedRealtime()
+        thinkingAt = talkStartedAt; answeredThisTurn = false
+        setState(MoynaState.THINKING, "tile")
+        armGiveUp(10)
+    }
+
+    // ---------- azan ----------
+
+    private val prayerTick = object : Runnable {
+        override fun run() { try { checkAzan() } catch (e: Exception) { Log.w(tag, "azan check failed: ${e.message}") }; main.postDelayed(this, 15_000) }
+    }
+
+    /** At each prayer's time: play the azan, unless that prayer is switched off or it is already too late. */
+    private fun checkAzan() {
+        val now = java.time.LocalDateTime.now()
+        val day = Prayer.day(now.toLocalDate()) ?: return
+        for ((key, _, time) in day.prayers()) {
+            val late = java.time.Duration.between(java.time.LocalDateTime.of(day.date, time), now).seconds
+            if (late < 0 || late > MoynaConfig.AZAN_MAX_LATE_SECONDS) continue
+            val id = "${day.date}:$key"
+            if (prefs.getString("azan_done", "") == id) return
+            if (!prefs.getBoolean("azan_$key", true)) {
+                prefs.edit().putString("azan_done", id).apply(); Log.i(tag, "azan for $key is switched off"); return
+            }
+            if (client != null || state == MoynaState.TEST || azan != null) return   // wait for the conversation to end
+            prefs.edit().putString("azan_done", id).apply()
+            playAzan(key, late.toInt())
+            return
+        }
+    }
+
+    /** Play the azan quietly. (Also used by the admin screen's test button.) */
+    fun playAzan(prayer: String, lateSeconds: Int = 0) = main.post {
+        if (azan != null || client != null) return@post
+        val file = if (prayer == "fajr" && hasAsset("azan/fajr.ogg")) "azan/fajr.ogg" else "azan/azan.ogg"
+        try {
+            val fd = context.assets.openFd(file)
+            azan = android.media.MediaPlayer().apply {
+                setAudioAttributes(android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                setDataSource(fd.fileDescriptor, fd.startOffset, fd.length); fd.close()
+                setVolume(MoynaConfig.AZAN_VOLUME, MoynaConfig.AZAN_VOLUME)
+                setOnCompletionListener { stopAzan("finished") }
+                prepare(); start()
+            }
+            Log.i(tag, "azan: playing for $prayer ($file, $lateSeconds s after its time)")
+            Events.log("azan", "prayer" to prayer, "late_s" to lateSeconds)
+            if (state == MoynaState.SLEEPING) main.removeCallbacks(sleepTick)
+            onWantScreen()
+            setState(MoynaState.SPEAKING, "azan")
+        } catch (e: Exception) {
+            Log.w(tag, "azan could not play ($file): ${e.message}"); Events.log("error", "what" to "azan: ${e.message}")
+            azan?.release(); azan = null
+        }
+    }
+
+    private fun hasAsset(path: String) = try { context.assets.openFd(path).close(); true } catch (e: Exception) { false }
+
+    private fun stopAzan(why: String) {
+        val a = azan ?: return
+        azan = null
+        try { a.stop() } catch (e: Exception) {}
+        a.release()
+        Log.i(tag, "azan: stopped ($why)")
+        if (why != "finished") Events.log("azan_stopped", "by" to why)
+        if (state == MoynaState.SPEAKING && client == null) setState(MoynaState.IDLE)
     }
 
     /** The red stop button: stop everything, same as saying "থামো". */
@@ -160,7 +269,9 @@ class MoynaEngine(
 
     /** "থামো" or the stop button: cut the answer, end the conversation, go back to waiting for "Moyna". */
     private fun stopConversation(why: String) {
+        if (azan != null) { stopAzan(why); return }
         Log.i(tag, "stop ($why): conversation ended, still listening for Moyna")
+        Events.log("stop", "by" to why)
         player.stopNow()
         endConversation(playEndChime = true)
     }
@@ -174,6 +285,7 @@ class MoynaEngine(
             if (state != MoynaState.SLEEPING) return
             if (SystemClock.elapsedRealtime() >= sleepUntil) {
                 Log.i(tag, "sleep over; listening for Moyna again")
+                Events.log("wake_up", "by" to "time")
                 wake.clear()
                 setState(MoynaState.IDLE)
             } else {
@@ -186,6 +298,8 @@ class MoynaEngine(
     /** End any conversation right away, say "ঠিক আছে, আমি একটু চুপ থাকছি", and ignore "Moyna" for a while. */
     private fun stopAndSleep(minutes: Int, why: String) {
         Log.i(tag, "stop + sleep $minutes min ($why)")
+        Events.log("sleep", "minutes" to minutes, "by" to why)
+        stopAzan("sleep"); readText = null
         main.removeCallbacks(giveUp); stopLookupSounds()
         val c = client
         client = null
@@ -234,11 +348,15 @@ class MoynaEngine(
 
     private fun startConversation(why: String) {
         Log.i(tag, "conversation start ($why)")
+        Events.log("wake", "how" to why)
+        stopAzan("conversation")
+        readText = null
         onWantScreen()
         val key = BuildConfig.GEMINI_API_KEY
         if (key.isBlank()) { fail("problem", "চাবি (API key) বসানো হয়নি"); return }
-        if (!isOnline()) { Log.w(tag, "no internet"); fail("offline", "ইন্টারনেট কাজ করছে না"); return }
+        if (!isOnline()) { Log.w(tag, "no internet"); Events.log("error", "what" to "no internet"); fail("offline", "ইন্টারনেট কাজ করছে না"); return }
 
+        turnHeard.setLength(0); turnSaid.setLength(0); answeredThisTurn = false; thinkingAt = 0
         session++
         ready = false; retried = false; pending.clear(); heardSpeech = false; gotWordsThisTurn = false
         modelTurnOpen = false; dropRestOfAnswer = false; exchanges = 0
@@ -258,11 +376,13 @@ class MoynaEngine(
     }
 
     private fun connect() {
-        client = GeminiLiveClient(BuildConfig.GEMINI_API_KEY, listenerFor(session)).also { it.connect() }
+        client = GeminiLiveClient(BuildConfig.GEMINI_API_KEY, listenerFor(session), readText).also { it.connect() }
     }
 
     private fun endConversation(playEndChime: Boolean) {
         main.removeCallbacks(giveUp); stopLookupSounds()
+        if (client != null && readText == null) Events.log("end", "answers" to exchanges)
+        readText = null
         val c = client
         client = null
         session++                          // ignore any late messages from the old conversation
@@ -283,6 +403,7 @@ class MoynaEngine(
 
     /** Back to listening for a follow-up question. */
     private fun afterAnswer() {
+        if (readText != null) { endConversation(playEndChime = false); return }   // a tile sentence: nothing more to hear
         val now = SystemClock.elapsedRealtime()
         if (now - conversationStartedAt > MoynaConfig.MAX_CONVERSATION_SECONDS * 1000L) {
             Log.i(tag, "conversation reached its maximum length")
@@ -324,7 +445,7 @@ class MoynaEngine(
         }
         // In a conversation, the on-phone listener hears stop words, even while Moyna is talking.
         wake.feed(pcm, Listen.COMMAND)
-        if (lookingUp) return                     // Gemini must not hear the "searching" clip and ticks
+        if (lookingUp || readText != null) return // Gemini must not hear the "searching" sounds, or anything while reading a tile
         if (state == MoynaState.SPEAKING) {       // don't send Moyna's own voice back to Gemini...
             // ...but a loud voice near the phone (far above her filtered echo) interrupts her.
             if (mic.echoCancelling && MoynaConfig.BARGE_IN_LOUDNESS > 0 && rms > MoynaConfig.BARGE_IN_LOUDNESS) {
@@ -352,7 +473,7 @@ class MoynaEngine(
             // follow-up deadline, so steady TV noise can't hold the conversation open.
             if (now + 4_000 <= followUpDeadline + 8_000) armGiveUp(4)
         } else if (state == MoynaState.LISTENING && heardSpeech && now - lastLoudAt > 900) {
-            setState(MoynaState.THINKING)
+            setState(MoynaState.THINKING); thinkingAt = now
             // Wait long for an answer only if Gemini actually heard words; otherwise it was just noise.
             armGiveUp(if (gotWordsThisTurn) MoynaConfig.ANSWER_TIMEOUT_SECONDS else 6)
         }
@@ -375,6 +496,10 @@ class MoynaEngine(
             modelTurnOpen = true
             if (lookingUp) { stopLookupSounds(); player.stopNow() }   // the answer is ready
             if (dropRestOfAnswer) return@onMain
+            if (!answeredThisTurn) {
+                answeredThisTurn = true
+                if (thinkingAt > 0) Events.log("answer_start", "ms" to SystemClock.elapsedRealtime() - thinkingAt, "tile" to (readText != null))
+            }
             if (state != MoynaState.SPEAKING) {
                 main.removeCallbacks(giveUp)
                 setState(MoynaState.SPEAKING)
@@ -384,15 +509,19 @@ class MoynaEngine(
 
         override fun onInputText(text: String) = onMain {
             Log.i(tag, "heard: $text")
+            turnHeard.append(text)
             gotWordsThisTurn = true
             if (state == MoynaState.THINKING) armGiveUp(MoynaConfig.ANSWER_TIMEOUT_SECONDS)
         }
-        override fun onOutputText(text: String) { Log.i(tag, "said: $text") }
+        override fun onOutputText(text: String) { Log.i(tag, "said: $text"); onMain { turnSaid.append(text) } }
 
         override fun onInterrupted() = onMain { player.stopNow() }
 
         override fun onToolCall(id: String, name: String, args: org.json.JSONObject) = onMain {
             when (name) {
+                "get_bus_times" -> toolFromData(id, name, mySession, Bus.ready(), { Bus.ageSeconds() <= 90 }, Bus::refresh) { Bus.facts() }
+                "get_weather" -> toolFromData(id, name, mySession, Weather.ready(), { Weather.ageMinutes() <= 30 }, Weather::refresh) { Weather.facts() }
+                "get_prayer_times" -> { Events.log("tool", "name" to name); client?.sendToolResponse(id, name, Prayer.facts()) }
                 "go_to_sleep" -> stopAndSleep(args.optInt("minutes", MoynaConfig.SLEEP_MINUTES).coerceIn(1, 12 * 60), "asked Gemini")
                 "set_volume" -> client?.sendToolResponse(id, name, changeVolume(args.optString("change", "louder")))
                 "end_conversation" -> endConversation(playEndChime = true)
@@ -411,6 +540,7 @@ class MoynaEngine(
                     LookUp.ask(BuildConfig.GEMINI_API_KEY, q, MoynaConfig.LOOKUP_TIMEOUT_SECONDS * 1000L) { answer ->
                         main.post {
                             Log.i(tag, "look-up took ${(SystemClock.elapsedRealtime() - asked) / 100 / 10.0} s")
+                            Events.log("look_up", "q" to q, "ms" to SystemClock.elapsedRealtime() - asked, "ok" to (answer != null))
                             if (session != mySession) return@post
                             main.removeCallbacks(lookupSlow)
                             client?.sendToolResponse(id, name, answer ?: "Could not look it up right now (no answer).")
@@ -425,6 +555,9 @@ class MoynaEngine(
             modelTurnOpen = false
             stopLookupSounds()
             if (state == MoynaState.SPEAKING) exchanges++
+            if (readText == null && (turnHeard.isNotEmpty() || turnSaid.isNotEmpty()))
+                Events.log("turn", "heard" to turnHeard.toString().trim(), "said" to turnSaid.toString().trim())
+            turnHeard.setLength(0); turnSaid.setLength(0); answeredThisTurn = false; thinkingAt = 0
             if (dropRestOfAnswer) { dropRestOfAnswer = false; return@onMain }
             if (state == MoynaState.SPEAKING) waitUntilPlayedThen(mySession) { afterAnswer() }
             else afterAnswer()   // Gemini chose not to answer (e.g. it was just noise)
@@ -433,6 +566,7 @@ class MoynaEngine(
         override fun onClosed(reason: String, isError: Boolean) = onMain {
             if (!isError) { endConversation(playEndChime = state != MoynaState.SPEAKING); return@onMain }
             Log.w(tag, "problem: $reason")
+            Events.log("error", "what" to "connection: ${reason.take(120)}")
             val r = reason.lowercase()
             val quota = "exhausted" in r || "quota" in r || "429" in r
             val badKey = "api key" in r
@@ -454,6 +588,17 @@ class MoynaEngine(
         }
     }
 
+    /** Answer a get_bus_times / get_weather call from the hub's data, fetching first if it is stale. */
+    private fun toolFromData(id: String, name: String, mySession: Int, ready: Boolean, fresh: () -> Boolean,
+                             refresh: ((Boolean) -> Unit) -> Unit, facts: () -> String) {
+        Events.log("tool", "name" to name)
+        if (!ready) { client?.sendToolResponse(id, name, "Not available: this is not set up."); return }
+        if (fresh()) { client?.sendToolResponse(id, name, facts()); return }
+        refresh { ok -> main.post {
+            if (session == mySession) client?.sendToolResponse(id, name, if (ok) facts() else "Could not get this right now.")
+        } }
+    }
+
     /** Wait until the speaker has finished playing everything, then run [next]. */
     private fun waitUntilPlayedThen(mySession: Int, next: () -> Unit) {
         main.postDelayed({
@@ -468,6 +613,8 @@ class MoynaEngine(
     /** Say a short Bengali message (recorded in advance, works offline) and show it on screen. */
     private fun fail(clip: String, screenText: String) {
         main.removeCallbacks(giveUp); stopLookupSounds()
+        readText = null
+        Events.log("error", "what" to clip)
         val c = client; client = null; c?.close()
         session++
         ready = false; pending.clear()

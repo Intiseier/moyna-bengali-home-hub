@@ -13,7 +13,12 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /** One conversation with Gemini Live over a websocket. Create a new one per conversation. */
-class GeminiLiveClient(private val apiKey: String, private val listener: Listener) {
+class GeminiLiveClient(
+    private val apiKey: String,
+    private val listener: Listener,
+    /** If set, this session only reads this text aloud in Moyna's voice (tile taps): no listening, no tools. */
+    private val readAloud: String? = null,
+) {
 
     interface Listener {
         fun onReady()
@@ -95,7 +100,10 @@ class GeminiLiveClient(private val apiKey: String, private val listener: Listene
     private fun handle(text: String) {
         if (finished) return
         val o = try { JSONObject(text) } catch (e: Exception) { Log.w(TAG, "bad json"); return }
-        if (o.has("setupComplete")) listener.onReady()
+        if (o.has("setupComplete")) {
+            readAloud?.let { ws?.send(JSONObject().put("realtimeInput", JSONObject().put("text", it)).toString()) }
+            listener.onReady()
+        }
         o.optJSONObject("serverContent")?.let { sc ->
             sc.optJSONObject("inputTranscription")?.optString("text")?.takeIf { it.isNotBlank() }
                 ?.let { listener.onInputText(it) }
@@ -120,7 +128,20 @@ class GeminiLiveClient(private val apiKey: String, private val listener: Listene
         if (o.has("goAway")) Log.i(TAG, "server goAway: ${o.optJSONObject("goAway")}")
     }
 
+    /** Setup for a session that only reads one sentence aloud. */
+    private fun buildReadSetup(): String = JSONObject().put("setup", JSONObject()
+        .put("model", MoynaConfig.MODEL)
+        .put("generationConfig", JSONObject()
+            .put("responseModalities", JSONArray().put("AUDIO"))
+            .put("speechConfig", JSONObject().put("voiceConfig", JSONObject()
+                .put("prebuiltVoiceConfig", JSONObject().put("voiceName", MoynaConfig.VOICE)))))
+        .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text",
+            "You are a voice that reads text aloud. Read the user's text aloud exactly as written, word for word, " +
+            "in natural, calm Bangladeshi Bengali. Do not add, remove, translate, explain or answer anything."))))
+        .put("outputAudioTranscription", JSONObject())).toString()
+
     private fun buildSetup(): String {
+        if (readAloud != null) return buildReadSetup()
         val setup = JSONObject()
             .put("model", MoynaConfig.MODEL)
             .put("generationConfig", JSONObject()
@@ -138,7 +159,13 @@ class GeminiLiveClient(private val apiKey: String, private val listener: Listene
                         .put("enum", JSONArray().put("louder").put("quieter").put("max"))), listOf("change")))
                 .put(tool("end_conversation", "End the conversation now, when she says stop, be quiet, thank you, that is all, or nothing else.",
                     JSONObject(), emptyList()))
-                .put(tool("look_up", "Look up current information on the internet with Google Search: weather, news, sports scores, prices, prayer times, opening hours, anything that changes.",
+                .put(tool("get_bus_times", "Live arrival times of her own buses at her own bus stops near home. Use for any question about when her bus comes.",
+                    JSONObject(), emptyList()))
+                .put(tool("get_weather", "Current weather and the next 12 hours at her home. Use for any weather question about where she lives.",
+                    JSONObject(), emptyList()))
+                .put(tool("get_prayer_times", "Today's prayer (namaz) times from her mosque calendar. Use for any prayer time question.",
+                    JSONObject(), emptyList()))
+                .put(tool("look_up", "Look up current information on the internet with Google Search: news, sports scores, prices, weather in other places, opening hours, anything that changes.",
                     JSONObject().put("question", JSONObject().put("type", "STRING")
                         .put("description", "A short English question including the place, e.g. 'weather in Dhaka today'.")),
                     listOf("question"))))))
