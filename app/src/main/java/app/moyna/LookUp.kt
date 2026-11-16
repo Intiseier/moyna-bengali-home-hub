@@ -31,6 +31,7 @@ object LookUp {
         val answer = StringBuilder()
         var finished = false
         var searched = false
+        var lastTextAt = 0L
         fun finish(ws: WebSocket, ok: Boolean) {
             synchronized(answer) {
                 if (finished) return
@@ -49,8 +50,9 @@ object LookUp {
                     .put("generationConfig", JSONObject().put("responseModalities", JSONArray().put("AUDIO")))
                     .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text",
                         "You answer factual questions using Google Search. Always search first. Reply in plain " +
-                        "English with ONLY the facts needed to answer the question, in one or two short " +
-                        "sentences (numbers, names, dates, times). No background, no extra details, no advice."))))
+                        "English with ONLY the facts needed to answer the question, in ONE short sentence of at " +
+                        "most 25 words (numbers, names, dates, times). Temperatures in Fahrenheit only. " +
+                        "No background, no extra details, no advice."))))
                     .put("tools", JSONArray().put(JSONObject().put("googleSearch", JSONObject())))
                     .put("outputAudioTranscription", JSONObject()))
                 webSocket.send(setup.toString())
@@ -63,8 +65,17 @@ object LookUp {
                     webSocket.send(JSONObject().put("realtimeInput", JSONObject().put("text", question)).toString())
                 }
                 o.optJSONObject("serverContent")?.let { sc ->
-                    if (sc.has("groundingMetadata")) searched = true
-                    sc.optJSONObject("outputTranscription")?.optString("text")?.let { synchronized(answer) { answer.append(it) } }
+                    sc.optJSONObject("outputTranscription")?.optString("text")?.takeIf { it.isNotEmpty() }?.let {
+                        synchronized(answer) { answer.append(it) }
+                        lastTextAt = android.os.SystemClock.elapsedRealtime()
+                    }
+                    // The model also speaks its answer, and only says "done" when that speech has
+                    // finished streaming (5-10 s later). The text is complete long before that: the
+                    // search details arrive right after the last words. So stop there.
+                    if (sc.has("groundingMetadata")) {
+                        searched = true
+                        if (synchronized(answer) { answer.isNotBlank() }) finish(webSocket, true)
+                    }
                     if (sc.optBoolean("turnComplete")) finish(webSocket, true)
                 }
             }
@@ -77,6 +88,16 @@ object LookUp {
                 finish(webSocket, false)
             }
         })
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ finish(ws, answer.isNotEmpty()) }, timeoutMs)
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        handler.postDelayed({ finish(ws, answer.isNotEmpty()) }, timeoutMs)
+        // Backstop: if the words stopped coming 2 s ago, the answer is complete.
+        val stalled = object : Runnable {
+            override fun run() {
+                if (finished) return
+                if (lastTextAt > 0 && android.os.SystemClock.elapsedRealtime() - lastTextAt > 2_000) finish(ws, true)
+                else handler.postDelayed(this, 300)
+            }
+        }
+        handler.postDelayed(stalled, 300)
     }
 }

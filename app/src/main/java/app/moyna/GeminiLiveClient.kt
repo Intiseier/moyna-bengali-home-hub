@@ -164,6 +164,6 @@ class GeminiLiveClient(private val apiKey: String, private val listener: Listene
         val here = java.time.ZonedDateTime.now()
         val dhaka = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Dhaka"))
         return "Right now it is ${here.format(fmt)} where she lives (${here.zone.id}). " +
-            "In Bangladesh it is ${dhaka.format(fmt)}. Say times the simple spoken way, e.g. \"বিকাল সাড়ে চারটা\"."
+            "In Bangladesh it is ${dhaka.format(fmt)}."
     }
 }
