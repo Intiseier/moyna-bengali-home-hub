@@ -23,3 +23,6 @@ echo-*.pcm
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Private planning, prayer calendar photos, event logs: NEVER commit
+private/
