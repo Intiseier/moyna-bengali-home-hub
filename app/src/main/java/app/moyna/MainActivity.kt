@@ -166,6 +166,11 @@ class MainActivity : Activity(), SensorEventListener {
         ui.removeCallbacks(tick); tick.run()
     }
 
+    override fun onResume() {
+        super.onResume()
+        Kiosk.enter(this)
+    }
+
     override fun onStop() {
         MoynaHub.listener = null
         MoynaHub.usageListener = null
@@ -270,7 +275,14 @@ class MainActivity : Activity(), SensorEventListener {
 
     // A touch while the screen is in its dark night look only wakes the screen; it does not press anything.
     private var swallow = false
+    private val openAdmin = Runnable { askPin() }
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        // Hidden admin screen: hold the top-left corner for 5 seconds.
+        when (ev.action) {
+            MotionEvent.ACTION_DOWN -> if (ev.x < dp(70) && ev.y < dp(70)) ui.postDelayed(openAdmin, 5_000)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> ui.removeCallbacks(openAdmin)
+            MotionEvent.ACTION_MOVE -> if (ev.x > dp(90) || ev.y > dp(90)) ui.removeCallbacks(openAdmin)
+        }
         if (ev.action == MotionEvent.ACTION_DOWN) {
             val wasDark = night && !awake()
             lastTouch = SystemClock.elapsedRealtime()
@@ -321,6 +333,71 @@ class MainActivity : Activity(), SensorEventListener {
         (usageFill.layoutParams as LinearLayout.LayoutParams).weight = if (alert) 1f else f
         (usageRest.layoutParams as LinearLayout.LayoutParams).weight = if (alert) 0f else 1f - f
         usageFill.requestLayout()
+    }
+
+    // ---------- hidden admin screen (for the family member who looks after Moyna) ----------
+
+    private fun askPin() {
+        val pin = BuildConfig.ADMIN_PIN
+        if (pin.length < 4) {
+            android.widget.Toast.makeText(this, "Admin screen is closed: set ADMIN_PIN in personal.properties and rebuild.", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        val box = android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            textSize = 28f; gravity = Gravity.CENTER
+        }
+        android.app.AlertDialog.Builder(this).setTitle("Admin PIN").setView(box)
+            .setPositiveButton("OK") { _, _ ->
+                if (box.text.toString() == pin) showAdmin()
+                else { Log.i("Moyna", "admin: wrong PIN"); android.widget.Toast.makeText(this, "Wrong PIN", android.widget.Toast.LENGTH_SHORT).show() }
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun showAdmin() {
+        Log.i("Moyna", "admin screen opened")
+        val pad = dp(14)
+        val info = TextView(this).apply { textSize = 15f; setTextColor(Color.WHITE); setPadding(0, 0, 0, pad) }
+        val log = TextView(this).apply { textSize = 11f; setTextColor(Color.rgb(200, 220, 200)); typeface = Typeface.MONOSPACE }
+        val buttons = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(pad, pad, pad, pad); setBackgroundColor(Color.rgb(20, 24, 28))
+            addView(info); addView(buttons); addView(log)
+        }
+        val scroll = android.widget.ScrollView(this).apply { addView(page) }
+        val dialog = android.app.Dialog(this, android.R.style.Theme_Material_NoActionBar_Fullscreen).apply { setContentView(scroll) }
+        fun refresh() {
+            val owner = Kiosk.isOwner(this)
+            info.text = "Moyna ${BuildConfig.VERSION_NAME}\n" +
+                "Talk time today: ${(MoynaHub.usage * MoynaConfig.DAILY_TALK_MINUTES).toInt()} min\n" +
+                "Light sensor: ${lux.toInt()} lux (${if (night) "night" else "day"} look)\n" +
+                "Kiosk: " + when {
+                    !owner -> "not set up (Moyna is not the device owner)"
+                    Kiosk.isOff(this) -> "OFF"
+                    else -> "ON"
+                }
+        }
+        fun button(label: String, action: () -> Unit) = buttons.addView(android.widget.Button(this).apply {
+            text = label; isAllCaps = false; setOnClickListener { action(); refresh() }
+        })
+        button("Exit kiosk (use the phone normally)") {
+            Kiosk.exit(this)
+            startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+        button("Turn kiosk back on") { Kiosk.turnOn(this) }
+        button("Close") { dialog.dismiss() }
+        refresh()
+        // Recent activity, newest first (the phone's own temporary log; Phase 5 adds a proper events log).
+        Thread {
+            val lines = try {
+                Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "400", "-s", "Moyna:*"))
+                    .inputStream.bufferedReader().readLines().filter { "Moyna" in it && "wake health" !in it }
+                    .map { it.substring(6).replace(Regex("I/Moyna\\s*\\(\\s*\\d+\\): "), "") }.reversed()
+            } catch (e: Exception) { listOf("could not read the log: ${e.message}") }
+            runOnUiThread { log.text = "Recent activity (newest first)\n\n" + lines.joinToString("\n") }
+        }.start()
+        dialog.show()
     }
 
     // ---------- tests started from the PC (see README) ----------

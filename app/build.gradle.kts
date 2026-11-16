@@ -38,6 +38,7 @@ android {
 
         buildConfigField("String", "GEMINI_API_KEY", "\"$geminiKey\"")
         buildConfigField("String", "CARE_CONTACT", "\"${personal("CARE_CONTACT", "a family member")}\"")
+        buildConfigField("String", "ADMIN_PIN", "\"${personal("ADMIN_PIN", "")}\"")
         buildConfigField("String", "EMERGENCY_NUMBER", "\"${personal("EMERGENCY_NUMBER", "911")}\"")
     }
 

@@ -14,7 +14,9 @@
     <!-- Lets Moyna bring its screen to the front when she says "Moyna" (granted over adb). -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- testOnly lets the device-owner role be removed again from the PC (see README, "Kiosk"). -->
     <application
+        android:testOnly="true"
         android:label="ময়না"
         android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
         <activity
@@ -26,12 +28,28 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Lets Moyna be the phone's home screen (kiosk mode). -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <service
             android:name=".MoynaService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <receiver
+            android:name=".AdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".BootReceiver"

@@ -7,3 +7,7 @@ CARE_CONTACT=a family member
 
 ## Emergency phone number where she lives (911 in the US/Canada, 999 in Bangladesh/UK, 112 in the EU).
 EMERGENCY_NUMBER=911
+
+## 4-digit PIN for the hidden admin screen (hold the top-left corner of the screen for 5 seconds).
+## Leave empty and the admin screen stays closed.
+ADMIN_PIN=

@@ -197,3 +197,15 @@ Ideas and pull requests are welcome.
 Built with [Gemini Live API](https://ai.google.dev), [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), ONNX Runtime and OkHttp. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 MIT License. Use it, change it, build it for your own family. If you do, I'd love to hear about it, and a ⭐ helps others find it.
+
+## Kiosk mode (optional)
+
+Kiosk mode makes Moyna the phone's home screen and only app, so it can't be left by accident. It needs a phone with **no accounts** on it.
+
+```bash
+adb install -r -t app-debug.apk                                # -t is required: the app is marked testOnly
+adb shell dpm set-device-owner app.moyna/.AdminReceiver        # turn kiosk on (then open Moyna once)
+adb shell dpm remove-active-admin app.moyna/.AdminReceiver     # turn kiosk off completely
+```
+
+The app is marked `android:testOnly="true"` on purpose: that is what allows `remove-active-admin` to work, so the phone never needs a factory reset to get out. You can also leave kiosk from the phone: hold the top-left corner of the screen for 5 seconds, enter the `ADMIN_PIN` from `personal.properties`, and tap **Exit kiosk**.
