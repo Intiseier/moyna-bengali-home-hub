@@ -49,7 +49,7 @@ object MoynaConfig {
     const val BUS_REFRESH_SECONDS = 60
     const val WEATHER_REFRESH_MINUTES = 15
     // Azan loudness, 0.0 to 1.0 of the phone's full volume. It is a living room: keep it low.
-    const val AZAN_VOLUME = 0.3f
+    const val AZAN_VOLUME = 0.5f
     // The azan waits for a conversation to end, but is skipped if it would start later than this.
     const val AZAN_MAX_LATE_SECONDS = 150
     // For months with no calendar file, prayer times are calculated for this spot (New York City's
