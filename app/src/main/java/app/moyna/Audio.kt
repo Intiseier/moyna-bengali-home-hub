@@ -172,7 +172,8 @@ object Sounds {
     val end: ByteArray by lazy { tones(880.0 to 120, 587.0 to 180, volume = 0.22) }
 
     /** Short high blip used only in the wake word test ("say Moyna now"). */
-    val prompt: ByteArray by lazy { tones(1200.0 to 90, volume = 0.25) }
+    // (Padded with silence: a sound shorter than the speaker's buffer can sit there unplayed.)
+    val prompt: ByteArray by lazy { tones(1200.0 to 90, 0.0 to 410, volume = 0.25) }
 
     /** Low double beep for problems. */
     val error: ByteArray by lazy { tones(330.0 to 180, 0.0 to 80, 330.0 to 180, volume = 0.3) }
