@@ -19,3 +19,8 @@ BUS_STOPS=
 ## Home location for the weather strip (decimal degrees). Leave empty to switch weather off.
 HOME_LAT=
 HOME_LON=
+
+## Optional: TP-Link Kasa smart plugs shown as on/off buttons on the hub.
+## English name|Bengali name|plug's IP address, comma-separated. Put your Kasa app login in
+## private/kasa-login.properties (KASA_EMAIL=..., KASA_PASSWORD=...). Leave empty for no light buttons.
+LIGHTS=

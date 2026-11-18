@@ -15,12 +15,15 @@ object MoynaConfig {
     // ---- Hub screen ----
     // The tiles, in order. Add, remove or reorder lines here; tiles fill rows left to right by width.
     // Known ids: bus (next 3 buses per line), prayer, talk (same as saying "Moyna"), quiet (sleep 1 hour),
-    // weather (now, plus the next 7 hours).
+    // weather (now, plus the next 7 hours), light:0, light:1, ... (smart-plug lights from LIGHTS in
+    // personal.properties; the label shown is the name given there).
     val TILES = listOf(
         Tile("bus", "🚌", "বাস", "Bus", width = 2f),
         Tile("prayer", "🕌", "নামাজ", "Prayer", width = 1f),
         Tile("talk", "🎤", "ময়না", "Moyna", width = 0.5f),
         Tile("quiet", "😴", "চুপ", "Quiet", width = 0.5f),
+        Tile("light:0", "💡", "বাতি", "Light", width = 1f),
+        Tile("light:1", "💡", "বাতি", "Light", width = 1f),
         Tile("weather", "🌦️", "আবহাওয়া", "Weather", width = 2f),
     )
     // Words on the screen: "en" = English, "bn" = Bengali. Can be switched in the admin screen.

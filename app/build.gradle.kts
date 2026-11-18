@@ -1,4 +1,5 @@
-﻿import java.util.Properties
+﻿import java.security.MessageDigest
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -24,6 +25,22 @@ val personalProps = Properties().apply {
 fun personal(name: String, default: String) =
     personalProps.getProperty(name, default).trim().replace("\\", "").replace("\"", "'")
 
+// Kasa smart plugs: the Kasa account login lives in private/kasa-login.properties (never committed).
+// Only a one-way hash of it goes into the app: sha256(sha1(email) + sha1(password)), which is what
+// the plugs check (KLAP v2). The file is read line by line so any character in the password works.
+val kasaAuthHash: String = run {
+    val f = rootProject.file("private/kasa-login.properties")
+    if (!f.exists()) return@run ""
+    val kv = f.readLines(Charsets.UTF_8).map { it.removePrefix("﻿") }
+        .filter { "=" in it && !it.trimStart().startsWith("#") }
+        .associate { it.substringBefore("=").trim() to it.substringAfter("=").trim() }
+    val email = kv["KASA_EMAIL"].orEmpty(); val password = kv["KASA_PASSWORD"].orEmpty()
+    if (email.isEmpty() || password.isEmpty()) return@run ""
+    fun h(alg: String, b: ByteArray): ByteArray = MessageDigest.getInstance(alg).digest(b)
+    val digest: ByteArray = h("SHA-256", h("SHA-1", email.toByteArray()) + h("SHA-1", password.toByteArray()))
+    digest.joinToString("") { b: Byte -> String.format("%02x", b) }
+}
+
 android {
     namespace = "app.moyna"
     compileSdk = 35
@@ -46,6 +63,8 @@ android {
         buildConfigField("String", "HOME_LON", "\"${personal("HOME_LON", "")}\"")
         buildConfigField("String", "ADMIN_PIN", "\"${personal("ADMIN_PIN", "")}\"")
         buildConfigField("String", "EMERGENCY_NUMBER", "\"${personal("EMERGENCY_NUMBER", "911")}\"")
+        buildConfigField("String", "KASA_AUTH_HASH", "\"$kasaAuthHash\"")
+        buildConfigField("String", "LIGHTS", "\"${personal("LIGHTS", "")}\"")
     }
 
     buildFeatures { buildConfig = true }

@@ -54,6 +54,7 @@ A budget phone on the living room wall, always plugged in, locked to this one ap
 - 🏠 **A home hub on the wall.** A large clock with the date and Bangladesh time, big tiles with an emoji and a few words (English or Bengali, switched in the admin screen), live bus times for two lines, and a weather strip showing now and the next 7 hours. It dims when idle, and from 11 PM to 4 AM it goes black with a faint clock (a tap lights it up).
 - 🚌 **Bus tile.** Live arrival times for your own stops (MTA Bus Time, New York), shown on the tile and spoken on a tap, about a second later.
 - 🕌 **Prayer times and azan.** Times come from your own mosque calendar (typed into a small file), or are calculated when there is no file. The azan plays quietly at each prayer time; each prayer can be switched off.
+- 💡 **Light buttons.** TP-Link Kasa smart plugs get their own on/off tiles: yellow with "ON" when the light is on, grey with "OFF" when it's off. They talk to the plugs directly over the home Wi-Fi (no cloud, no Alexa needed, and Alexa and the plugs' own timers keep working). The tiles check the plugs every 30 seconds, so changes from Alexa or a timer show up too.
 - 🌦️ **Weather.** From Open-Meteo (free, no key). A tap says how it feels and whether rain or snow is coming in the next 12 hours.
 - 🔎 **Live information.** News, cricket scores and prices are looked up with Google Search. Moyna says "একটু দেখে নিচ্ছি" at once and ticks softly until the answer is ready, usually 4 to 9 seconds.
 - ✋ **Stop.** A big red stop button appears whenever Moyna is making sound. Saying *"thamo"* / *"stop"* also works when she is not talking over you. Stop ends the conversation; it does not put her to sleep.
@@ -199,6 +200,7 @@ With only a Gemini key, you get the clock, talking with Moyna, look-ups, the pra
 | Bus tile (New York) | Free [MTA Bus Time key](https://bustime.mta.info/wiki/Developers/Index) and your stop codes | `MTA_BUSTIME_KEY` in `local.properties`, `BUS_STOPS` in `personal.properties` |
 | Your mosque's prayer times | One small CSV file per month (optional; otherwise calculated) | `private/prayer-times/` |
 | Azan | A recording you have the right to use | `private/azan/azan.ogg` |
+| Light buttons | TP-Link Kasa Wi-Fi plugs (tested: EP10, firmware 1.1.2) and your Kasa app login | `LIGHTS` in `personal.properties` (name, Bengali name and each plug's IP address); `KASA_EMAIL` and `KASA_PASSWORD` in `private/kasa-login.properties`. Only a one-way hash of the login is built into the app. Give the plugs fixed addresses in your router. |
 | Admin screen | A 4-digit PIN | `ADMIN_PIN` in `personal.properties` |
 | Kiosk mode | A phone with no accounts on it | See [Kiosk mode](#kiosk-mode-optional) |
 

@@ -165,7 +165,15 @@ class MoynaEngine(
             "bus" -> freshThenSay("bus", Bus.ready(), { Bus.ageSeconds() <= 90 }, Bus::refresh) { Bus.sentence() }
             "weather" -> freshThenSay("weather", Weather.ready(), { Weather.ageMinutes() <= 30 }, Weather::refresh) { Weather.sentence() }
             "prayer" -> sayLine(Prayer.sentence(), "prayer")
-            else -> player.play(Sounds.error)
+            else -> if (id.startsWith("light:")) {
+                val i = id.substringAfter("light:").toIntOrNull() ?: -1
+                Lights.toggle(i) { ok ->
+                    main.post {
+                        Events.log("light", "name" to (Lights.get(i)?.nameEn ?: "?"), "ok" to ok.toString(), "on" to Lights.get(i)?.on.toString())
+                        if (!ok) player.play(Sounds.error)   // the tile itself shows on/off; only a failure makes a sound
+                    }
+                }
+            } else player.play(Sounds.error)
         }
     }
 

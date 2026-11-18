@@ -91,16 +91,20 @@ class MainActivity : Activity() {
         val margin = dp(4)
         var row: LinearLayout? = null
         var used = 0f
+        var lightRow = false
         fun flush() {
             row?.let {
                 if (used < 2f) it.addView(View(this), LinearLayout.LayoutParams(0, -1, 2f - used))
-                grid.addView(it, LinearLayout.LayoutParams(-1, 0, 0.9f))
+                // The light buttons only need a picture and two short words: give them a slimmer row.
+                grid.addView(it, LinearLayout.LayoutParams(-1, 0, if (lightRow) 0.5f else 0.9f))
             }
-            row = null; used = 0f
+            row = null; used = 0f; lightRow = false
         }
         for (t in MoynaConfig.TILES) {
             // No bus stops or no home location set: leave that tile out.
             if ((t.id == "bus" && !Bus.ready()) || (t.id == "weather" && !Weather.ready())) continue
+            // Light tiles only for plugs listed in LIGHTS (and only with a Kasa login).
+            if (t.id.startsWith("light:") && (!Lights.ready() || Lights.get(lightIndex(t.id)) == null)) continue
             if (t.width >= 2f) {
                 flush()
                 val v = when (t.id) { "weather" -> weatherStrip(); "bus" -> busTile(t); else -> tileView(t) }
@@ -111,6 +115,7 @@ class MainActivity : Activity() {
             val r = row ?: LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }.also { row = it }
             r.addView(tileView(t), LinearLayout.LayoutParams(0, -1, t.width).apply { setMargins(margin, margin, margin, margin) })
             used += t.width
+            if (t.id.startsWith("light:")) lightRow = true
         }
         flush()
 
@@ -168,7 +173,15 @@ class MainActivity : Activity() {
         val emoji = text(if (small) 30f else 26f).apply { text = t.emoji }
         val label = text(if (small) 16f else 20f, bold = true).apply { setPadding(0, dp(2), 0, 0) }
         val sub = text(23f, bold = true).apply { setTextColor(Color.rgb(255, 225, 150)); visibility = View.GONE }
-        box.addView(emoji); box.addView(label); box.addView(sub)
+        if (t.id.startsWith("light:")) {
+            // Light button: 💡 beside the name on one line, ON / OFF large underneath.
+            emoji.textSize = 20f; label.textSize = 18f; label.setPadding(dp(6), 0, 0, 0); sub.textSize = 22f
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+            line.addView(emoji); line.addView(label)
+            box.addView(line); box.addView(sub)
+        } else {
+            box.addView(emoji); box.addView(label); box.addView(sub)
+        }
         if (t.id == "prayer") {
             // "Asr" in the warm colour, then the time, large.
             prayerTime = text(29f, bold = true).also { box.addView(it) }
@@ -240,10 +253,12 @@ class MainActivity : Activity() {
     /** Put the latest bus, prayer and weather information on the tiles, in the screen language. */
     private fun fillTiles() {
         val en = english()
-        for (t in MoynaConfig.TILES) tileLabels[t.id]?.text = when (t.id) {
-            "bus" -> "${t.emoji}  ${if (en) t.labelEn else t.label}"
+        for (t in MoynaConfig.TILES) tileLabels[t.id]?.text = when {
+            t.id == "bus" -> "${t.emoji}  ${if (en) t.labelEn else t.label}"
+            t.id.startsWith("light:") -> Lights.get(lightIndex(t.id))?.let { if (en) it.nameEn else it.nameBn } ?: ""
             else -> if (en) t.labelEn else t.label
         }
+        fillLights()
         val fresh = Bus.ageSeconds() <= 180
         for ((line, first, rest) in busCols) {
             val times = if (fresh) Bus.tileTimes(line, en) else emptyList()
@@ -276,6 +291,27 @@ class MainActivity : Activity() {
     }
     private val hourFmt = DateTimeFormatter.ofPattern("ha", Locale.ENGLISH)
 
+    private fun lightIndex(id: String) = id.substringAfter("light:").toIntOrNull() ?: -1
+
+    /** Light tiles: warm yellow and "ON" when the light is on, plain and "OFF" when off, "…" while unknown. */
+    private fun fillLights() {
+        for (t in MoynaConfig.TILES) {
+            if (!t.id.startsWith("light:")) continue
+            val l = Lights.get(lightIndex(t.id)) ?: continue
+            val box = tileViews[t.id] ?: continue
+            val on = l.on
+            tileSubs[t.id]?.let {
+                it.visibility = View.VISIBLE
+                it.text = when { l.busy -> "…"; on == true -> tr("ON", "চালু"); on == false -> tr("OFF", "বন্ধ"); else -> "?" }
+                it.setTextColor(if (on == true) Color.rgb(60, 45, 0) else Color.rgb(255, 225, 150))
+            }
+            tileLabels[t.id]?.setTextColor(if (on == true) Color.rgb(60, 45, 0) else Color.WHITE)
+            tileEmoji[t.id]?.alpha = if (on == true) 1f else 0.45f
+            (box.background as GradientDrawable).setColor(if (on == true) Color.rgb(255, 214, 90) else Color.argb(38, 255, 255, 255))
+        }
+    }
+    private var lightsCheckedAt = 0L
+
     // ---------- life cycle ----------
 
     override fun onStart() {
@@ -285,6 +321,8 @@ class MainActivity : Activity() {
         MoynaHub.usageListener = { u, alert -> runOnUiThread { showUsage(u, alert) } }
         showUsage(MoynaHub.usage, MoynaHub.usageAlert)
         HubData.onChange = { runOnUiThread { fillTiles() } }
+        Lights.listener = { runOnUiThread { fillLights() } }
+        lightsCheckedAt = 0L
         Prayer.load(applicationContext)
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             MoynaService.start(this)   // (re)start while visible, so the mic is allowed in the background
@@ -304,6 +342,7 @@ class MainActivity : Activity() {
         MoynaHub.listener = null
         MoynaHub.usageListener = null
         HubData.onChange = null
+        Lights.listener = null
         ui.removeCallbacks(tick)
         super.onStop()
     }
@@ -329,6 +368,10 @@ class MainActivity : Activity() {
             if (!(night && !awake())) {
                 if (Bus.ready() && Bus.ageSeconds() >= MoynaConfig.BUS_REFRESH_SECONDS) Bus.refresh()
                 if (Weather.ready() && Weather.ageMinutes() >= MoynaConfig.WEATHER_REFRESH_MINUTES) Weather.refresh()
+                // Lights can change from Alexa, their own timers or the wall: check every 30 s.
+                if (Lights.ready() && SystemClock.elapsedRealtime() - lightsCheckedAt > 30_000) {
+                    lightsCheckedAt = SystemClock.elapsedRealtime(); Lights.refreshAll()
+                }
             }
             fillTiles()
             ui.postDelayed(this, 5_000)

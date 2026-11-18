@@ -19,6 +19,7 @@ Moyna is a Bengali/English voice assistant and wall hub for an old Android phone
 | `GeminiLiveClient.kt`, `LookUp.kt` | The Gemini Live connection and the Google Search look-up |
 | `MainActivity.kt` | The hub screen, night look, admin screen, test commands |
 | `HubData.kt`, `PrayerCalc.kt` | Bus, weather and prayer data |
+| `Kasa.kt`, `Lights.kt` | TP-Link Kasa smart plugs (KLAP v2, local Wi-Fi) and the light tiles; login in `private/kasa-login.properties`, never read it |
 | `WakeWord.kt`, `Audio.kt` | On-phone wake word (sherpa-onnx), microphone and speaker |
 | `Kiosk.kt`, `Events.kt` | Kiosk mode and the events log |
 | `tools/` | Scripts to pull the events log and summarise a week |
@@ -41,3 +42,4 @@ On Windows the APK is written under `%LOCALAPPDATA%/moyna-build` (see the root `
 - Google Search on the free tier only works through the older Live model (`LookUp.kt`).
 - sherpa-onnx int8 models hang on 32-bit ARM; use the full-precision ones.
 - The night look goes by the clock, not the light sensor.
+- The Kasa EP10 plugs (firmware 1.1.2) use KLAP and need the Kasa account login; plain http must be allowed (`usesCleartextTraffic`). `python-kasa` on the PC finds them (`Discover.discover`) and is the reference for `Kasa.kt`.
