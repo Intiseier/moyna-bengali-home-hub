@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Moyna's bird logo (same drawing as docs/logo.svg), centred in the adaptive icon's safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="21" android:translateY="26" android:scaleX="0.27" android:scaleY="0.27">
+        <path android:fillColor="#E9B949" android:pathData="M154 20 C178 14 198 26 206 40 L230 44 L206 56 C212 72 214 88 212 102 C206 152 160 182 104 184 C142 168 170 140 172 106 C173 92 168 82 156 78 C134 72 112 74 90 80 C104 46 128 26 154 20 Z"/>
+        <path android:fillColor="#E8862A" android:pathData="M204 40 L230 44 L206 56 Z"/>
+        <path android:fillColor="#4FB3BF" android:pathData="M14 72 C46 104 96 112 136 98 C158 90 172 96 170 114 C162 142 112 160 70 152 C42 146 22 112 14 72 Z"/>
+        <path android:fillColor="#E9B949" android:pathData="M58 188 C90 180 120 168 140 150 C132 174 104 188 58 188 Z"/>
+        <path android:fillColor="#1B2340" android:pathData="M174.0,46 a6,6 0 1,0 12.0,0 a6,6 0 1,0 -12.0,0 Z"/>
+    </group>
+</vector>

@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.svg" width="140" alt="Moyna logo: a gold bird with a teal wing"></p>
+
 # Moyna (ময়না): a free Bengali voice assistant and home hub on an old Android phone
 
 **Like an Alexa with a screen, but in Bengali, and it costs nothing.** Turn the old Android phone sitting in your drawer into an always-on voice assistant and wall hub for a Bengali-speaking parent, grandparent or relative.

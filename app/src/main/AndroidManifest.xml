@@ -21,6 +21,8 @@
         android:testOnly="true"
         android:usesCleartextTraffic="true"
         android:label="ময়না"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
         <activity
             android:name=".MainActivity"
