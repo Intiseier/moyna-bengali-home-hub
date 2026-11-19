@@ -88,6 +88,7 @@ android {
 val copyPrivateAssets = tasks.register<Copy>("copyPrivateAssets") {
     from(rootProject.file("private/prayer-times")) { include("*.csv"); into("prayer") }
     from(rootProject.file("private/azan")) { include("*.ogg", "*.mp3"); into("azan") }
+    from(rootProject.file("private/duas")) { include("*.json"); into("duas") }   // dua of the day (Tanzil text)
     into(layout.buildDirectory.dir("privateAssets"))
 }
 tasks.named("preBuild") { dependsOn(copyPrivateAssets) }

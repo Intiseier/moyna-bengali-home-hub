@@ -48,7 +48,8 @@ object HubData {
 // ============================== BUS ==============================
 
 /** One upcoming bus at our stop. */
-class BusArrival(val line: String, val minutes: Int, val atTerminal: Boolean, val departsIn: Int)
+class BusArrival(val line: String, val minutes: Int, val atTerminal: Boolean, val departsIn: Int,
+                 val away: String = "", val destination: String = "")
 
 /**
  * Live bus times from MTA Bus Time (SIRI StopMonitoring), straight from the phone.
@@ -103,7 +104,10 @@ object Bus {
             val notLeft = "layover" in progress || "prevTrip" in progress
             val dep = j.optString("OriginAimedDepartureTime")
             val depIn = if (dep.isBlank()) 0 else (Duration.between(now, OffsetDateTime.parse(dep)).seconds / 60).toInt().coerceAtLeast(0)
-            list.add(BusArrival(line, ((mins + 30) / 60).toInt().coerceAtLeast(0), notLeft, depIn))
+            // How far away it is, as MTA words it ("2 stops away", "1.4 miles away", "approaching").
+            val away = call.optJSONObject("Extensions")?.optJSONObject("Distances")?.optString("PresentableDistance") ?: ""
+            val dest = when (val d = j.opt("DestinationName")) { is org.json.JSONArray -> d.optString(0); null -> ""; else -> d.toString() }
+            list.add(BusArrival(line, ((mins + 30) / 60).toInt().coerceAtLeast(0), notLeft, depIn, away, dest))
             if (list.size >= 3) break
         }
         return list
@@ -165,6 +169,11 @@ object Weather {
     @Volatile var highF = 0
     @Volatile var lowF = 0
     @Volatile var hours: List<WeatherHour> = emptyList()      // from the next full hour on
+    @Volatile var tomorrowHighF = 0
+    @Volatile var tomorrowLowF = 0
+    @Volatile var tomorrowCode = 0
+    @Volatile var sunrise: LocalTime? = null
+    @Volatile var sunset: LocalTime? = null
     @Volatile var fetchedAt = 0L
     @Volatile private var busy = false
 
@@ -179,7 +188,7 @@ object Weather {
             val o = HubData.getJson("https://api.open-meteo.com/v1/forecast?latitude=${BuildConfig.HOME_LAT}&longitude=${BuildConfig.HOME_LON}" +
                 "&current=temperature_2m,apparent_temperature,weather_code,is_day" +
                 "&hourly=temperature_2m,weather_code,precipitation_probability,snowfall,is_day" +
-                "&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto&forecast_days=2")
+                "&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset&temperature_unit=fahrenheit&timezone=auto&forecast_days=2")
             var ok = false
             if (o != null) try {
                 val c = o.getJSONObject("current")
@@ -199,12 +208,31 @@ object Weather {
                 code = c.getInt("weather_code"); isDay = c.getInt("is_day") == 1
                 highF = Math.round(d.getJSONArray("temperature_2m_max").getDouble(0)).toInt()
                 lowF = Math.round(d.getJSONArray("temperature_2m_min").getDouble(0)).toInt()
+                tomorrowHighF = Math.round(d.getJSONArray("temperature_2m_max").getDouble(1)).toInt()
+                tomorrowLowF = Math.round(d.getJSONArray("temperature_2m_min").getDouble(1)).toInt()
+                tomorrowCode = d.getJSONArray("weather_code").getInt(1)
+                sunrise = LocalDateTime.parse(d.getJSONArray("sunrise").getString(0)).toLocalTime()
+                sunset = LocalDateTime.parse(d.getJSONArray("sunset").getString(0)).toLocalTime()
                 hours = list; fetchedAt = SystemClock.elapsedRealtime(); ok = true
                 HubData.onChange?.invoke()
             } catch (e: Exception) { Log.w("Moyna", "weather answer not understood: ${e.message}") }
             busy = false
             done?.invoke(ok)
         }
+    }
+
+    /** A short tip for the weather page: rain or snow coming in the next 12 hours, or tomorrow. */
+    fun tip(english: Boolean): String? {
+        val next = hours.take(12).firstOrNull { snowy(it.code) || wet(it.code) && it.rainChance >= 40 }
+        if (next != null) {
+            val h = next.time.hour; val h12 = if (h % 12 == 0) 12 else h % 12
+            val snow = snowy(next.code)
+            return if (english) "${if (snow) "Snow" else "Rain"} likely around $h12 ${if (h < 12) "am" else "pm"}. Take an umbrella."
+            else "${HubData.dayPart(next.time.toLocalTime())} ${HubData.bn(h12)}টার দিকে ${if (snow) "তুষার" else "বৃষ্টি"} হতে পারে। ছাতা নিয়ে যান।"
+        }
+        if (wet(tomorrowCode) || snowy(tomorrowCode))
+            return if (english) "${if (snowy(tomorrowCode)) "Snow" else "Rain"} expected tomorrow." else "কাল ${if (snowy(tomorrowCode)) "তুষার" else "বৃষ্টি"} হতে পারে।"
+        return null
     }
 
     private fun wet(code: Int) = code in 51..67 || code in 80..82 || code in 95..99
@@ -221,6 +249,28 @@ object Weather {
         in 71..77, 85, 86 -> "❄️"
         in 95..99 -> "⛈️"
         else -> "☁️"
+    }
+
+    /** Which line icon (IconView) shows this weather. */
+    fun kind(code: Int, day: Boolean) = when (code) {
+        0 -> if (day) "sun" else "moon"
+        1, 2 -> if (day) "partly" else "cloud"
+        45, 48 -> "fog"
+        in 51..67, in 80..82 -> "rain"
+        in 71..77, 85, 86 -> "snow"
+        in 95..99 -> "storm"
+        else -> "cloud"
+    }
+
+    /** One or two words for the sky, for the hub screen. */
+    fun label(code: Int, day: Boolean, english: Boolean) = when (code) {
+        0 -> if (day) (if (english) "Sunny" else "রোদ") else (if (english) "Clear" else "পরিষ্কার")
+        1, 2 -> if (english) "Some clouds" else "কিছু মেঘ"
+        45, 48 -> if (english) "Foggy" else "কুয়াশা"
+        in 51..67, in 80..82 -> if (english) "Rain" else "বৃষ্টি"
+        in 71..77, 85, 86 -> if (english) "Snow" else "তুষার"
+        in 95..99 -> if (english) "Storm" else "ঝড়"
+        else -> if (english) "Cloudy" else "মেঘলা"
     }
 
     private fun feel(f: Int) = when {
@@ -400,4 +450,48 @@ object Prayer {
         return ramadan + "Today's prayer times where she lives (${if (d.calculated) "calculated" else "from her mosque calendar"}): Fajr ${d.fajr}, sunrise ${d.sunrise}, " +
             "Zuhr ${d.zuhr}, Asr ${d.asr}, Maghrib ${d.maghrib}, Isha ${d.isha} (24-hour clock). Now it is ${LocalTime.now().withSecond(0).withNano(0)}."
     }
+}
+
+// ============================== ISLAMIC DATE AND DUA ==============================
+
+object Hijri {
+    private val en = listOf("Muharram", "Safar", "Rabi al-Awwal", "Rabi al-Thani", "Jumada al-Ula", "Jumada al-Akhirah",
+        "Rajab", "Sha'ban", "Ramadan", "Shawwal", "Dhu al-Qadah", "Dhu al-Hijjah")
+    private val bnNames = listOf("মহররম", "সফর", "রবিউল আউয়াল", "রবিউস সানি", "জমাদিউল আউয়াল", "জমাদিউস সানি",
+        "রজব", "শাবান", "রমজান", "শাওয়াল", "জিলকদ", "জিলহজ")
+
+    /** Today's Islamic date (Umm al-Qura, moved by RAMADAN_DAY_OFFSET), e.g. "8 Jumada al-Akhirah 1448". */
+    fun today(english: Boolean, d: LocalDate = LocalDate.now()): String = try {
+        val h = java.time.chrono.HijrahDate.from(d.minusDays(MoynaConfig.RAMADAN_DAY_OFFSET.toLong()))
+        val day = h.get(java.time.temporal.ChronoField.DAY_OF_MONTH)
+        val month = h.get(java.time.temporal.ChronoField.MONTH_OF_YEAR) - 1
+        val year = h.get(java.time.temporal.ChronoField.YEAR)
+        if (english) "$day ${en[month]} $year" else "${HubData.bn(day)} ${bnNames[month]} ${HubData.bn(year)}"
+    } catch (e: Exception) { "" }
+}
+
+/** One dua: Arabic, how to say it (Bengali / English letters), and its meaning (Bengali / English). */
+class Dua(val ref: String, val surah: String, val arabic: String, val sayBn: String, val sayEn: String, val bn: String, val en: String)
+
+/**
+ * Dua of the day, from assets/duas/rabbana.json (built from private/duas, never committed).
+ * Arabic: Tanzil Quran Text (tanzil.net). Meanings: Muhiuddin Khan (Bengali), Saheeh International (English).
+ */
+object Duas {
+    @Volatile private var all: List<Dua>? = null
+
+    fun load(c: Context) {
+        if (all != null) return
+        all = try {
+            val o = JSONObject(c.assets.open("duas/rabbana.json").bufferedReader().readText())
+            val a = o.getJSONArray("duas")
+            (0 until a.length()).map { i ->
+                val d = a.getJSONObject(i)
+                Dua(d.getString("ref"), d.optString("surah"), d.getString("ar"), d.optString("bn_say"), d.optString("en_say"), d.optString("bn"), d.optString("en"))
+            }
+        } catch (e: Exception) { Log.i("Moyna", "no dua file (private/duas/rabbana.json)"); emptyList() }
+    }
+
+    /** The same dua all day, the next one tomorrow. */
+    fun today(): Dua? = all?.takeIf { it.isNotEmpty() }?.let { it[(LocalDate.now().toEpochDay() % it.size).toInt()] }
 }

@@ -4,8 +4,6 @@ package app.moyna
  * One tile on the hub screen: an emoji with a label (Bengali and English).
  * width: 2 = a full row, 1 = half a row, 0.5 = a small quarter-row button.
  */
-data class Tile(val id: String, val emoji: String, val label: String, val labelEn: String, val width: Float = 1f)
-
 /**
  * ALL the easy-to-change settings for Moyna live in this one file.
  * After changing anything here, rebuild and reinstall (see README).
@@ -13,19 +11,8 @@ data class Tile(val id: String, val emoji: String, val label: String, val labelE
 object MoynaConfig {
 
     // ---- Hub screen ----
-    // The tiles, in order. Add, remove or reorder lines here; tiles fill rows left to right by width.
-    // Known ids: bus (next 3 buses per line), prayer, talk (same as saying "Moyna"), quiet (sleep 1 hour),
-    // weather (now, plus the next 7 hours), light:0, light:1, ... (smart-plug lights from LIGHTS in
-    // personal.properties; the label shown is the name given there).
-    val TILES = listOf(
-        Tile("bus", "🚌", "বাস", "Bus", width = 2f),
-        Tile("prayer", "🕌", "নামাজ", "Prayer", width = 1f),
-        Tile("talk", "🎤", "ময়না", "Moyna", width = 0.5f),
-        Tile("quiet", "😴", "চুপ", "Quiet", width = 0.5f),
-        Tile("light:0", "💡", "বাতি", "Light", width = 1f),
-        Tile("light:1", "💡", "বাতি", "Light", width = 1f),
-        Tile("weather", "🌦️", "আবহাওয়া", "Weather", width = 2f),
-    )
+    // The hub's layout and look are in MainActivity.kt and HubViews.kt (colors: object Look).
+    // A part with nothing set up behind it (no bus stops, no home location, no lights) is left off.
     // Words on the screen: "en" = English, "bn" = Bengali. Can be switched in the admin screen.
     // (What Moyna SAYS is always Bengali.)
     const val DEFAULT_SCREEN_LANGUAGE = "en"

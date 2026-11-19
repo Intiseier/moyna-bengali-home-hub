@@ -8,17 +8,17 @@ They say *"Moyna"*, hear a chime, ask anything out loud in Bengali (or English),
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE) ![Android 11+](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white) ![Works on 32-bit phones](https://img.shields.io/badge/works%20on-old%2032--bit%20phones-blue) ![Gemini Live API](https://img.shields.io/badge/Gemini%20Live%20API-free%20tier-8E75B2) ![Language](https://img.shields.io/badge/speaks-Bengali%20%7C%20English-orange)
 
 <p align="center">
-  <img src="docs/screenshots/hub.png" width="170" alt="Home hub: clock, Bangladesh time, live bus times, next prayer, talk and quiet buttons, weather for the next 7 hours">
+  <img src="docs/screenshots/hub.png" width="170" alt="Home hub: the sun's path through today's prayers, the clock, Dhaka time on a map of Bangladesh, next prayer, live buses, weather, and Moyna and quiet buttons">
   &nbsp;
   <img src="docs/screenshots/hub-bn.png" width="170" alt="The same home hub with the words switched to Bengali">
   &nbsp;
-  <img src="docs/screenshots/listening.png" width="170" alt="Listening screen after someone says Moyna">
+  <img src="docs/screenshots/listening.png" width="170" alt="Moyna listening: a panel slides up from the bottom with the hub still visible behind it">
   &nbsp;
-  <img src="docs/screenshots/speaking.png" width="170" alt="Moyna is speaking, with a big red stop button">
+  <img src="docs/screenshots/prayer.png" width="170" alt="The prayer page: today's prayer times, the Islamic date and a dua of the day in Arabic and Bengali">
   &nbsp;
-  <img src="docs/screenshots/night.png" width="170" alt="Night look: black screen with a faint clock">
+  <img src="docs/screenshots/night.png" width="170" alt="Night look: black screen with a dim clock and Dhaka time">
 </p>
-<p align="center"><sub>The hub in English and in Bengali (one switch in the admin screen), listening, speaking, and the night look. (The bus lines shown are stand-ins from a public stop, not ours.)</sub></p>
+<p align="center"><sub>The hub in English and in Bengali (one switch in the admin screen), Moyna listening, the prayer page with a dua of the day, and the night look. (The bus lines shown are stand-ins from a public stop, not ours.)</sub></p>
 
 **This page has two parts:**
 
@@ -51,13 +51,14 @@ A budget phone on the living room wall, always plugged in, locked to this one ap
 
 - 🗣️ **Bengali conversation, kept short.** Real-time speech in, speech out (Gemini Live native audio). Moyna answers in one or two plain sentences of spoken Bangladeshi Bengali (or English if spoken to in English), with no small talk and no questions back. A conversation ends by itself after 3 answers.
 - 🐦 **Wake word "Moyna", fully on the phone.** Offline keyword spotting with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). **Nothing leaves the phone until after the chime.** No account, no trial, no wake-word license. It works best within a few feet of the phone; from across a room, tap the 🎤 tile instead.
-- 🏠 **A home hub on the wall.** A large clock with the date and Bangladesh time, big tiles with an emoji and a few words (English or Bengali, switched in the admin screen), live bus times for two lines, and a weather strip showing now and the next 7 hours. It dims when idle, and from 11 PM to 4 AM it goes black with a faint clock (a tap lights it up).
-- 🚌 **Bus tile.** Live arrival times for your own stops (MTA Bus Time, New York), shown on the tile and spoken on a tap, about a second later.
+- 🏠 **A home hub on the wall.** Dark indigo with turmeric and teal, in one font with Bengali letters ([Anek Bangla](https://fonts.google.com/specimen/Anek+Bangla)). At the top, the sun moves along its path through today's five prayers. Below it, a large clock, and Dhaka time written big on a map of Bangladesh. Then the next prayer, live buses, the weather with the next six hours, and a row of buttons (lights, Moyna, quiet). Words are English or Bengali (one switch in the admin screen). It dims when idle, and from 11 PM to 4 AM it goes black with only the clock and Dhaka time (a tap lights it up).
+- 📄 **Tiles open pages.** Tapping prayer, bus or weather slides up a page over the hub: today's prayer times, the Islamic date and a **dua of the day** (Arabic, how to say it and what it means, in Bengali or English); every upcoming bus with how far away it is; the weather hour by hour with the chance of rain, tomorrow, and sunrise and sunset. A page closes with ✕, by itself after 2 minutes, or when Moyna starts talking.
+- 🚌 **Buses.** Live arrival times for your own stops (MTA Bus Time, New York).
 - 🕌 **Prayer times and azan.** Times come from your own mosque calendar (typed into a small file), or are calculated when there is no file. The azan plays quietly at each prayer time; each prayer can be switched off. In Ramadan the tile counts down to the end of sehri and to iftar.
 - 💡 **Light buttons.** TP-Link Kasa smart plugs get their own on/off tiles: yellow with "ON" when the light is on, grey with "OFF" when it's off. They talk to the plugs directly over the home Wi-Fi (no cloud, no Alexa needed, and Alexa and the plugs' own timers keep working). The tiles check the plugs every 30 seconds, so changes from Alexa or a timer show up too. They also work by voice: "Moyna", then *"light off koro"*, *"food on"* or *"lights off"* (Bengali, English or a mix).
-- 🌦️ **Weather.** From Open-Meteo (free, no key). A tap says how it feels and whether rain or snow is coming in the next 12 hours.
+- 🌦️ **Weather.** From Open-Meteo (free, no key), with a tip when rain or snow is coming.
 - 🔎 **Live information.** News, cricket scores and prices are looked up with Google Search. Moyna says "একটু দেখে নিচ্ছি" at once and ticks softly until the answer is ready, usually 4 to 9 seconds.
-- ✋ **Stop.** A big red stop button appears whenever Moyna is making sound. Saying *"thamo"* / *"stop"* also works when she is not talking over you. Stop ends the conversation; it does not put her to sleep.
+- ✋ **Stop.** While Moyna listens or talks, a panel slides up from the bottom (the hub stays visible behind it), with a red Stop button whenever she is making sound. Saying *"thamo"* / *"stop"* also works when she is not talking over you. Stop ends the conversation; it does not put her to sleep.
 - 😴 **Quiet.** The quiet tile, or *"be quiet for an hour"*, makes her ignore her name for a while. The screen says so, and a tap wakes her.
 - 🧭 **Spoken commands.** *"Louder / quieter"*, *"thank you, that's all"*, *"what time is it?"* (she knows the real time here and in Bangladesh).
 - 🩺 **Health-safe answers.** General information only, never doses or diagnoses, always "ask your doctor or *(someone you choose)*", and an urgent-symptoms rule to call the emergency number.
@@ -81,7 +82,7 @@ flowchart LR
 
 - **One conversation = one short Live session.** Her voice streams as 16 kHz PCM. Gemini's own voice-activity detection decides when she's finished, tuned to be patient with pauses. Answers stream back as 24 kHz audio.
 - **While Moyna talks, the mic isn't sent to Gemini**, because Gemini would hear and transcribe its own echo. On the test phone the speaker sits next to the microphone, so the phone cannot hear a voice over Moyna's own; interrupting is done with the red stop button, or by voice in a pause.
-- **Tiles speak through a one-sentence Live session.** The app builds the Bengali sentence itself from fresh data and asks Gemini only to read it aloud, which starts about a second after the tap.
+- **Tiles don't talk; Moyna does.** Tapping a tile opens a page with the facts. Asking Moyna out loud ("when is my bus?") uses the same live data through her tools.
 - **Look-ups use a second model.** On the free tier, Google Search only works with the older Live model, so the main model calls a `look_up` tool and the app asks the search-capable model in the background. That model also speaks its answer; the app stops as soon as the words are complete instead of waiting for the speech to finish, which cut look-ups from about 15 seconds to 4 to 9.
 - **32-bit friendly.** The app ships only armeabi-v7a native code. The sherpa-onnx int8/"mobile" models hang on 32-bit ARM, so full-precision ones are used.
 
@@ -200,6 +201,7 @@ With only a Gemini key, you get the clock, talking with Moyna, look-ups, the pra
 | Bus tile (New York) | Free [MTA Bus Time key](https://bustime.mta.info/wiki/Developers/Index) and your stop codes | `MTA_BUSTIME_KEY` in `local.properties`, `BUS_STOPS` in `personal.properties` |
 | Your mosque's prayer times | One small CSV file per month (optional; otherwise calculated) | `private/prayer-times/` |
 | Azan | A recording you have the right to use | `private/azan/azan.ogg` |
+| Dua of the day | A JSON file of duas: Arabic, pronunciation, meanings (ours: the Quran's "Rabbana" duas, Arabic from [Tanzil](https://tanzil.net), meanings from tanzil.net/trans, which are for non-commercial use) | `private/duas/rabbana.json`; without it the prayer page simply has no dua |
 | Light buttons | TP-Link Kasa Wi-Fi plugs (tested: EP10, firmware 1.1.2) and your Kasa app login | `LIGHTS` in `personal.properties` (name, Bengali name and each plug's IP address); `KASA_EMAIL` and `KASA_PASSWORD` in `private/kasa-login.properties`. Only a one-way hash of the login is built into the app. Give the plugs fixed addresses in your router. |
 | Admin screen | A 4-digit PIN | `ADMIN_PIN` in `personal.properties` |
 | Kiosk mode | A phone with no accounts on it | See [Kiosk mode](#kiosk-mode-optional) |
@@ -210,7 +212,7 @@ With only a Gemini key, you get the clock, talking with Moyna, look-ups, the pra
 
 Everything easy to change is in [`MoynaConfig.kt`](app/src/main/java/app/moyna/MoynaConfig.kt): the model, the voice, the personality and system prompt, how many answers a conversation gets, the tiles, screen brightness, night hours and azan volume.
 
-- **Tiles:** the `TILES` list in `MoynaConfig.kt`. Add, remove or reorder lines. Known ids: `bus`, `prayer`, `talk`, `quiet`, `weather` (drawn as a wide strip).
+- **The hub screen:** laid out in `MainActivity.kt`; its colors, the font ([Anek Bangla](https://fonts.google.com/specimen/Anek+Bangla), SIL Open Font License) and the drawn parts (the sun's path through the prayers, the map of Bangladesh from [Natural Earth](https://www.naturalearthdata.com/), icons) are in `HubViews.kt`. A part with nothing behind it (no bus stops, home location or lights) is left off.
 - **Wake word:** `app/src/main/assets/kws/wake.txt`. Each line is one way the name can sound, written as phonemes, with its own sensitivity. You can rename the assistant by writing new phonemes, no training needed.
 - **Stop words:** `app/src/main/assets/kws/commands.txt`. Bengali words spoken alone are best written in Chinese-style pinyin (`t ā m ò` for *thamo*), because that's how this bilingual phoneme model hears them.
 - **Spoken commands and tools:** declared in `GeminiLiveClient.kt`, explained to the model in the system prompt, and handled in `MoynaEngine.onToolCall`.
