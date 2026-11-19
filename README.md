@@ -1,7 +1,7 @@
-# Moyna (ময়না): a free Bengali voice assistant on an old Android phone
+# Moyna (ময়না): a free Bengali voice assistant and home hub on an old Android phone
 
-**Like Alexa, but in Bengali, and it costs nothing.** Turn the old Android phone sitting in your drawer into an always-on voice assistant for a Bengali-speaking parent, grandparent or relative.
-They say *"Moyna"*, hear a chime, ask anything out loud in Bengali (or English), and Moyna answers out loud in simple, warm, spoken Bangladeshi Bengali.
+**Like an Alexa with a screen, but in Bengali, and it costs nothing.** Turn the old Android phone sitting in your drawer into an always-on voice assistant and wall hub for a Bengali-speaking parent, grandparent or relative.
+They say *"Moyna"*, hear a chime, ask anything out loud in Bengali (or English), and Moyna answers out loud in simple, warm, spoken Bangladeshi Bengali. The rest of the time the screen is a home hub they can read from across the room: the time here and in Dhaka, today's prayer times with the azan and a dua of the day, the weather, the next bus, and buttons for the lights.
 
 **Powered by Google's free Gemini Live API.** No subscription, no new hardware, no app to open. All you need is an old Android phone, a charger, Wi-Fi and a free API key.
 
@@ -130,8 +130,8 @@ You don't need to understand any commands. An AI coding assistant that can run t
 4. **Copy this whole message and send it to the AI:**
 
    ```text
-   I want to set up "Moyna", a free Bengali voice assistant, on an old Android phone for
-   my parent. The project is here: https://github.com/Intiseier/moyna-bengali-voice-assistant
+   I want to set up "Moyna", a free Bengali voice assistant and home hub, on an old Android
+   phone for my parent. The project is here: https://github.com/Intiseier/moyna-bengali-home-hub
 
    I'm not technical, so explain each step in plain, simple English and ask me before
    anything destructive. The phone is plugged into this computer with USB debugging on.
@@ -161,8 +161,8 @@ You don't need to understand any commands. An AI coding assistant that can run t
 1. **Install a JDK 17, the Android SDK command-line tools** (platform 35, build-tools 35) **and `adb`.** Point `JAVA_HOME` and `ANDROID_HOME` at them.
 2. **Clone the repository:**
    ```bash
-   git clone https://github.com/Intiseier/moyna-bengali-voice-assistant.git
-   cd moyna-bengali-voice-assistant
+   git clone https://github.com/Intiseier/moyna-bengali-home-hub.git
+   cd moyna-bengali-home-hub
    ```
 3. **Create `local.properties`** (private, git-ignored):
    ```properties
@@ -210,7 +210,7 @@ With only a Gemini key, you get the clock, talking with Moyna, look-ups, the pra
 
 ## Make it yours
 
-Everything easy to change is in [`MoynaConfig.kt`](app/src/main/java/app/moyna/MoynaConfig.kt): the model, the voice, the personality and system prompt, how many answers a conversation gets, the tiles, screen brightness, night hours and azan volume.
+Everything easy to change is in [`MoynaConfig.kt`](app/src/main/java/app/moyna/MoynaConfig.kt): the model, the voice, the personality and system prompt, how many answers a conversation gets, screen brightness, night hours, hold times and azan volume.
 
 - **The hub screen:** laid out in `MainActivity.kt`; its colors, the font ([Anek Bangla](https://fonts.google.com/specimen/Anek+Bangla), SIL Open Font License) and the drawn parts (the sun's path through the prayers, the map of Bangladesh from [Natural Earth](https://www.naturalearthdata.com/), icons) are in `HubViews.kt`. A part with nothing behind it (no bus stops, home location or lights) is left off.
 - **Wake word:** `app/src/main/assets/kws/wake.txt`. Each line is one way the name can sound, written as phonemes, with its own sensitivity. You can rename the assistant by writing new phonemes, no training needed.
@@ -284,6 +284,6 @@ Ideas and pull requests are welcome.
 
 ## Credits
 
-Built with [Gemini Live API](https://ai.google.dev), [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), ONNX Runtime and OkHttp. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Built with [Gemini Live API](https://ai.google.dev), [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), ONNX Runtime and OkHttp. Weather from [Open-Meteo](https://open-meteo.com), buses from [MTA Bus Time](https://bustime.mta.info), the map from [Natural Earth](https://www.naturalearthdata.com/), the font [Anek Bangla](https://fonts.google.com/specimen/Anek+Bangla). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 MIT License. Use it, change it, build it for your own family. If you do, I'd love to hear about it, and a ⭐ helps others find it.
