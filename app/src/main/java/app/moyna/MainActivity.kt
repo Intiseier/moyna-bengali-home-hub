@@ -15,8 +15,11 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -42,8 +45,6 @@ class MainActivity : Activity() {
     private lateinit var talk: LinearLayout        // shown instead of the tiles during a conversation
     private lateinit var talkText: TextView
     private lateinit var stop: TextView
-    private lateinit var usageFill: View
-    private lateinit var usageRest: View
     private val tileViews = HashMap<String, LinearLayout>()
     private val tileEmoji = HashMap<String, TextView>()
     private val tileSubs = HashMap<String, TextView>()
@@ -142,19 +143,9 @@ class MainActivity : Activity() {
             addView(talk, LinearLayout.LayoutParams(-1, 0, 1f))
         }
 
-        // Thin talk-time bar along the very bottom: fills as Moyna is used today, empties at midnight.
-        usageFill = View(this); usageRest = View(this)
-        val usageBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.argb(40, 255, 255, 255))
-            addView(usageFill, LinearLayout.LayoutParams(0, -1, 0f))
-            addView(usageRest, LinearLayout.LayoutParams(0, -1, 1f))
-        }
-        root = FrameLayout(this).apply {
-            addView(column, FrameLayout.LayoutParams(-1, -1))
-            addView(usageBar, FrameLayout.LayoutParams(-1, dp(4), Gravity.BOTTOM))
-        }
+        root = FrameLayout(this).apply { addView(column, FrameLayout.LayoutParams(-1, -1)) }
         setContentView(root)
+        MoynaHub.locked = getSharedPreferences("moyna", Context.MODE_PRIVATE).getBoolean("kid_lock", false)
         handleTestIntent(intent)
     }
 
@@ -318,8 +309,6 @@ class MainActivity : Activity() {
         super.onStart()
         MoynaHub.listener = { s, d -> runOnUiThread { show(s, d) } }
         show(MoynaHub.state, MoynaHub.detail)
-        MoynaHub.usageListener = { u, alert -> runOnUiThread { showUsage(u, alert) } }
-        showUsage(MoynaHub.usage, MoynaHub.usageAlert)
         HubData.onChange = { runOnUiThread { fillTiles() } }
         Lights.listener = { runOnUiThread { fillLights() } }
         lightsCheckedAt = 0L
@@ -340,7 +329,6 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         MoynaHub.listener = null
-        MoynaHub.usageListener = null
         HubData.onChange = null
         Lights.listener = null
         ui.removeCallbacks(tick)
@@ -365,7 +353,12 @@ class MainActivity : Activity() {
             dhaka.text = "Bangladesh " + now.withZoneSameInstant(ZoneId.of("Asia/Dhaka")).format(timeFmt)
             applyLook()
             // Live data only while the screen is lit in the daytime: no polling in the dark night look.
-            if (!(night && !awake())) {
+            // Kid lock: if the power button woke the screen, switch it off again after a few seconds.
+            if (MoynaHub.locked && screenOffWorks &&
+                SystemClock.elapsedRealtime() - lastTouch > MoynaConfig.KID_LOCK_AWAKE_SECONDS * 1000L) {
+                lastTouch = SystemClock.elapsedRealtime(); screenOffWorks = Kiosk.screenOff(this@MainActivity)
+            }
+            if (!(night && !awake()) && !MoynaHub.locked) {
                 if (Bus.ready() && Bus.ageSeconds() >= MoynaConfig.BUS_REFRESH_SECONDS) Bus.refresh()
                 if (Weather.ready() && Weather.ageMinutes() >= MoynaConfig.WEATHER_REFRESH_MINUTES) Weather.refresh()
                 // Lights can change from Alexa, their own timers or the wall: check every 30 s.
@@ -415,7 +408,19 @@ class MainActivity : Activity() {
             else -> MoynaConfig.BRIGHT_DAY_IDLE
         }
         val lp = window.attributes
-        if (lp.screenBrightness != b) { lp.screenBrightness = b; window.attributes = lp }
+        val bright = if (MoynaHub.locked) MoynaConfig.BRIGHT_NIGHT else b
+        if (lp.screenBrightness != bright) { lp.screenBrightness = bright; window.attributes = lp }
+        showSystemBars(!MoynaHub.locked)
+        // Kid lock: let the phone's own screen timeout switch the screen off (also a backup for screenOff()).
+        if (MoynaHub.locked) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (MoynaHub.locked) {
+            // Kid lock: all black, nothing to see or press.
+            root.setBackgroundColor(Color.BLACK)
+            for (v in listOf(clock, date, dhaka, status, grid, talk)) v.visibility = View.INVISIBLE
+            return
+        }
+        for (v in listOf(clock, date, dhaka)) v.visibility = View.VISIBLE
 
         root.setBackgroundColor(if (darkLook) Color.BLACK else background())
         val ink = if (darkLook) Color.rgb(120, 120, 120) else Color.WHITE
@@ -439,12 +444,23 @@ class MainActivity : Activity() {
     // A touch while the screen is in its dark night look only wakes the screen; it does not press anything.
     private var swallow = false
     private val openAdmin = Runnable { askPin() }
+    private val unlock = Runnable { setKidLock(false) }
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        // Hidden admin screen: keep a finger on the big clock for 10 seconds.
+        val hold = MoynaConfig.HOLD_SECONDS * 1000L
+        if (MoynaHub.locked) {
+            // Kid lock: every touch is ignored. Only if the screen can't be switched off (no device owner),
+            // a finger held anywhere for HOLD_SECONDS unlocks instead of the volume button.
+            if (!screenOffWorks) when (ev.action) {
+                MotionEvent.ACTION_DOWN -> ui.postDelayed(unlock, hold)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> ui.removeCallbacks(unlock)
+            }
+            return true
+        }
+        // Hidden admin screen: keep a finger on the big clock for HOLD_SECONDS.
         when (ev.action) {
             MotionEvent.ACTION_DOWN -> {
                 val r = android.graphics.Rect()
-                if (clock.getGlobalVisibleRect(r) && r.contains(ev.rawX.toInt(), ev.rawY.toInt())) ui.postDelayed(openAdmin, 10_000)
+                if (clock.getGlobalVisibleRect(r) && r.contains(ev.rawX.toInt(), ev.rawY.toInt())) ui.postDelayed(openAdmin, hold)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> ui.removeCallbacks(openAdmin)
         }
@@ -487,18 +503,44 @@ class MainActivity : Activity() {
         applyLook()
     }
 
-    /** Green normally, amber when close to the daily amount, red past it or after a quota refusal. */
-    private fun showUsage(used: Float, alert: Boolean) {
-        val f = used.coerceIn(0f, 1f)
-        val color = when {
-            alert || used >= 1f -> Color.rgb(230, 60, 50)
-            used >= 0.8f -> Color.rgb(240, 170, 40)
-            else -> Color.rgb(90, 200, 120)
+    /** Kid lock on or off (kept across restarts). */
+    private fun setKidLock(on: Boolean) {
+        MoynaHub.locked = on
+        getSharedPreferences("moyna", Context.MODE_PRIVATE).edit().putBoolean("kid_lock", on).apply()
+        Log.i("Moyna", "kid lock ${if (on) "on" else "off"}")
+        Events.log("kid_lock", "on" to on)
+        ui.removeCallbacks(openAdmin)
+        lastTouch = SystemClock.elapsedRealtime()
+        show(state, detail); fillTiles()
+        if (on) ui.postDelayed({ if (MoynaHub.locked) screenOffWorks = Kiosk.screenOff(this) }, 500)
+    }
+    /** False when the phone won't let Moyna switch the screen off; the kid lock is then a black screen. */
+    private var screenOffWorks = true
+
+    /** Hide the back button and status bar during the kid lock (a swipe from the edge shows them briefly). */
+    private var barsShown = true
+    private fun showSystemBars(show: Boolean) {
+        if (show == barsShown) return
+        barsShown = show
+        val c = window.insetsController ?: return
+        val bars = WindowInsets.Type.navigationBars() or WindowInsets.Type.statusBars()
+        if (show) c.show(bars) else {
+            c.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            c.hide(bars)
         }
-        usageFill.setBackgroundColor(color)
-        (usageFill.layoutParams as LinearLayout.LayoutParams).weight = if (alert) 1f else f
-        (usageRest.layoutParams as LinearLayout.LayoutParams).weight = if (alert) 0f else 1f - f
-        usageFill.requestLayout()
+    }
+
+    // Kid lock: volume-up pressed UNLOCK_PRESSES times within 4 seconds unlocks. All keys do nothing else.
+    private val volumePresses = ArrayList<Long>()
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!MoynaHub.locked) return super.dispatchKeyEvent(event)
+        lastTouch = SystemClock.elapsedRealtime()
+        if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            val now = SystemClock.elapsedRealtime()
+            volumePresses.add(now); volumePresses.removeAll { now - it > 4_000 }
+            if (volumePresses.size >= MoynaConfig.UNLOCK_PRESSES) { volumePresses.clear(); setKidLock(false) }
+        }
+        return true
     }
 
     // ---------- hidden admin screen (for the family member who looks after Moyna) ----------
@@ -591,6 +633,7 @@ class MainActivity : Activity() {
             prefs.edit().putString("ui_lang", if (english()) "bn" else "en").apply()
             show(state, detail); fillTiles()
         }
+        button("Kid lock: screen off, taps ignored (press volume-up ${MoynaConfig.UNLOCK_PRESSES} times to undo)") { dialog.dismiss(); setKidLock(true) }
         button("Play the azan now (test)") { dialog.dismiss(); MoynaHub.engine?.playAzan("test") }
         button("Refresh") { }
         button("Exit kiosk (use the phone normally)") {
@@ -628,6 +671,10 @@ class MainActivity : Activity() {
         // --es azan test : play the azan now.   --ez admin true : open the admin screen (asks for the PIN).
         intent?.getStringExtra("azan")?.let { intent.removeExtra("azan"); MoynaHub.engine?.playAzan(it) }
         if (intent?.getBooleanExtra("admin", false) == true) { intent.removeExtra("admin"); root.post { askPin() } }
+        // --ez kid_lock true|false : switch the kid lock on or off (same as the admin screen button / volume-up).
+        if (intent?.hasExtra("kid_lock") == true) {
+            val on = intent.getBooleanExtra("kid_lock", false); intent.removeExtra("kid_lock"); root.post { setKidLock(on) }
+        }
         if (intent?.getBooleanExtra("echo_test", false) == true) {
             intent.removeExtra("echo_test")
             root.postDelayed({ MoynaHub.engine?.echoTest(getExternalFilesDir(null)!!) }, 500)

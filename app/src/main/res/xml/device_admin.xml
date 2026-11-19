@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Moyna asks for no special admin policies. Being "device owner" is only used for kiosk mode. -->
+<!-- Being "device owner" is used for kiosk mode. force-lock lets the kid lock switch the screen off. -->
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-policies />
+    <uses-policies>
+        <force-lock />
+    </uses-policies>
 </device-admin>

@@ -54,14 +54,14 @@ A budget phone on the living room wall, always plugged in, locked to this one ap
 - 🏠 **A home hub on the wall.** A large clock with the date and Bangladesh time, big tiles with an emoji and a few words (English or Bengali, switched in the admin screen), live bus times for two lines, and a weather strip showing now and the next 7 hours. It dims when idle, and from 11 PM to 4 AM it goes black with a faint clock (a tap lights it up).
 - 🚌 **Bus tile.** Live arrival times for your own stops (MTA Bus Time, New York), shown on the tile and spoken on a tap, about a second later.
 - 🕌 **Prayer times and azan.** Times come from your own mosque calendar (typed into a small file), or are calculated when there is no file. The azan plays quietly at each prayer time; each prayer can be switched off.
-- 💡 **Light buttons.** TP-Link Kasa smart plugs get their own on/off tiles: yellow with "ON" when the light is on, grey with "OFF" when it's off. They talk to the plugs directly over the home Wi-Fi (no cloud, no Alexa needed, and Alexa and the plugs' own timers keep working). The tiles check the plugs every 30 seconds, so changes from Alexa or a timer show up too.
+- 💡 **Light buttons.** TP-Link Kasa smart plugs get their own on/off tiles: yellow with "ON" when the light is on, grey with "OFF" when it's off. They talk to the plugs directly over the home Wi-Fi (no cloud, no Alexa needed, and Alexa and the plugs' own timers keep working). The tiles check the plugs every 30 seconds, so changes from Alexa or a timer show up too. They also work by voice: "Moyna", then *"light off koro"*, *"food on"* or *"lights off"* (Bengali, English or a mix).
 - 🌦️ **Weather.** From Open-Meteo (free, no key). A tap says how it feels and whether rain or snow is coming in the next 12 hours.
 - 🔎 **Live information.** News, cricket scores and prices are looked up with Google Search. Moyna says "একটু দেখে নিচ্ছি" at once and ticks softly until the answer is ready, usually 4 to 9 seconds.
 - ✋ **Stop.** A big red stop button appears whenever Moyna is making sound. Saying *"thamo"* / *"stop"* also works when she is not talking over you. Stop ends the conversation; it does not put her to sleep.
 - 😴 **Quiet.** The quiet tile, or *"be quiet for an hour"*, makes her ignore her name for a while. The screen says so, and a tap wakes her.
 - 🧭 **Spoken commands.** *"Louder / quieter"*, *"thank you, that's all"*, *"what time is it?"* (she knows the real time here and in Bangladesh).
 - 🩺 **Health-safe answers.** General information only, never doses or diagnoses, always "ask your doctor or *(someone you choose)*", and an urgent-symptoms rule to call the emergency number.
-- 🔒 **Kiosk mode and a hidden admin screen.** Optional: lock the phone to Moyna so it can't be left by accident. Holding the clock for 10 seconds and entering a PIN opens an admin screen with today's activity, azan switches, the English/Bengali switch and "exit kiosk".
+- 🔒 **Kiosk mode and a hidden admin screen.** Optional: lock the phone to Moyna so it can't be left by accident. Holding the clock for 15 seconds and entering a PIN opens an admin screen with today's activity, azan switches, the English/Bengali switch, a kid lock (the screen switches off and ignores taps; press volume-up 5 times to undo) and "exit kiosk".
 - 📒 **Events log.** Every wake-up, question (text only, never audio), answer, tile tap and problem is written to a private log on the phone, with a script for a weekly summary.
 - 🔌 **Appliance-grade reliability.** Runs as a foreground service, starts by itself after a reboot, survives Wi-Fi drops, and plays a pre-recorded Bengali *"the internet isn't working"* message when offline.
 
@@ -239,7 +239,9 @@ adb shell dpm set-device-owner app.moyna/.AdminReceiver        # turn kiosk on (
 adb shell dpm remove-active-admin app.moyna/.AdminReceiver     # turn kiosk off completely
 ```
 
-The app is marked `android:testOnly="true"` on purpose: that is what allows `remove-active-admin` to work, so the phone never needs a factory reset to get out. You can also leave kiosk from the phone: hold the clock for 10 seconds, enter the `ADMIN_PIN` from `personal.properties`, and tap **Exit kiosk**.
+The app is marked `android:testOnly="true"` on purpose: that is what allows `remove-active-admin` to work, so the phone never needs a factory reset to get out. You can also leave kiosk from the phone: hold the clock for 15 seconds, enter the `ADMIN_PIN` from `personal.properties`, and tap **Exit kiosk**.
+
+The kid lock in the admin screen switches the screen off, which needs Moyna to be device owner. If you set up kiosk before the kid lock existed, run the two commands above once more (`remove-active-admin`, then `set-device-owner`) so Android sees the new permission; until then the kid lock is a black screen that turns off with the phone's own timeout.
 
 ### Events log
 

@@ -446,7 +446,7 @@ class MoynaEngine(
         if (state == MoynaState.SLEEPING) return  // asleep: ignore everything (a tap wakes her)
         val c = client
         if (c == null) {                          // waiting: only the on-phone wake word hears this
-            if (state == MoynaState.IDLE || state == MoynaState.ERROR) {
+            if ((state == MoynaState.IDLE || state == MoynaState.ERROR) && !MoynaHub.locked) {
                 wake.feed(pcm, Listen.WAKE)
             }
             return
@@ -533,6 +533,22 @@ class MoynaEngine(
                 "go_to_sleep" -> stopAndSleep(args.optInt("minutes", MoynaConfig.SLEEP_MINUTES).coerceIn(1, 12 * 60), "asked Gemini")
                 "set_volume" -> client?.sendToolResponse(id, name, changeVolume(args.optString("change", "louder")))
                 "end_conversation" -> endConversation(playEndChime = true)
+                "set_light" -> {
+                    val which = args.optString("light"); val on = args.optBoolean("on", false)
+                    val targets = if (which.equals("all", true)) Lights.all.indices.toList() else listOf(Lights.indexOf(which)).filter { it >= 0 }
+                    Events.log("tool", "name" to name, "light" to which, "on" to on)
+                    if (targets.isEmpty()) { client?.sendToolResponse(id, name, "No light called '$which'."); return@onMain }
+                    var left = targets.size; val failed = ArrayList<String>()
+                    for (i in targets) Lights.set(i, on) { ok ->
+                        main.post {
+                            Events.log("light", "name" to (Lights.get(i)?.nameEn ?: "?"), "ok" to ok.toString(), "on" to on.toString(), "by" to "voice")
+                            if (!ok) failed.add(Lights.get(i)?.nameEn ?: "?")
+                            if (--left == 0 && session == mySession) client?.sendToolResponse(id, name,
+                                if (failed.isEmpty()) "Done: ${if (which.equals("all", true)) "all lights" else which} now ${if (on) "on" else "off"}."
+                                else "Failed: ${failed.joinToString()} did not answer.")
+                        }
+                    }
+                }
                 "look_up" -> {
                     val q = args.optString("question")
                     Log.i(tag, "looking up: $q")

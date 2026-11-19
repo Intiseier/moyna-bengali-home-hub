@@ -35,6 +35,12 @@ object MoynaConfig {
     // Day / night, by the clock (24-hour): the dark night look from NIGHT_FROM_HOUR until NIGHT_UNTIL_HOUR.
     const val NIGHT_FROM_HOUR = 23
     const val NIGHT_UNTIL_HOUR = 4
+    // Hold a finger down this long to open the admin screen (on the clock) or, only on a phone where Moyna is not device owner, to undo the kid lock.
+    const val HOLD_SECONDS = 15
+    // Kid lock: press volume-up this many times (within a few seconds) to unlock. A screen woken by the
+    // power button while locked switches itself off again after KID_LOCK_AWAKE_SECONDS.
+    const val UNLOCK_PRESSES = 5
+    const val KID_LOCK_AWAKE_SECONDS = 10
     // In the day the screen dims after this long without a touch; at night it goes dark after this long.
     const val IDLE_DIM_SECONDS = 120
     const val NIGHT_AWAKE_SECONDS = 30
@@ -163,6 +169,11 @@ object MoynaConfig {
           the minutes she says (60 if she gives no time; for "tonight" use minutes until 7 in
           the morning). Never call go_to_sleep for TV sound or anything not clearly said to you.
         - If she asks for louder or quieter sound, call set_volume.
+        - If she asks to turn a light on or off, in Bengali, English or a mix ("light off koro",
+          "বাতি নিভাও", "বাতি জ্বালাও", "food on", "lights off"), call set_light with that light.
+          On = on / চালু / জ্বালাও / খোলো; off = off / বন্ধ / নিভাও. "Lights" with no name, or
+          "সব", means all. Then say only a very short confirmation such as "বাতি বন্ধ করলাম।"
+          If it failed, say only that the light did not answer.
         - For when her bus comes, call get_bus_times. For the weather where she lives, call
           get_weather. For prayer (namaz) times, call get_prayer_times. These are instant; use
           them instead of look_up, and say only what she asked for.

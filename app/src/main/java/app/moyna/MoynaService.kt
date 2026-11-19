@@ -25,7 +25,11 @@ object MoynaHub {
         listener?.invoke(s, d)
     }
 
-    // Talk-time bar: share of today's DAILY_TALK_MINUTES used (can go above 1), and whether
+    // Kid lock (admin screen): the screen switches off (or is black, if it can't), taps are ignored and
+    // Moyna ignores her name. Volume-up pressed UNLOCK_PRESSES times unlocks it. The azan still plays.
+    @Volatile var locked = false
+
+    // Talk time (shown in the admin screen): share of today's DAILY_TALK_MINUTES used (can go above 1), and whether
     // Google refused a request for quota reasons recently.
     @Volatile var usage = 0f
     @Volatile var usageAlert = false
@@ -58,7 +62,7 @@ class MoynaService : Service() {
         wifiLock = applicationContext.getSystemService(WifiManager::class.java)
             .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "moyna:wifi").apply { acquire() }
 
-        val engine = MoynaEngine(applicationContext, MoynaHub::publish) { showScreen() }
+        val engine = MoynaEngine(applicationContext, MoynaHub::publish) { if (!MoynaHub.locked) showScreen() }   // kid lock: stay dark
         MoynaHub.engine = engine
         engine.start()
         Log.i("Moyna", "service started")

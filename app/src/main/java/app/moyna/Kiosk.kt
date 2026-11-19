@@ -54,5 +54,10 @@ object Kiosk {
         } catch (e: Exception) { Log.w("Moyna", "kiosk exit problem: ${e.message}") }
     }
 
+    /** Switch the screen off now, like the power button (kid lock). Needs device owner; false if it can't. */
+    fun screenOff(c: Context): Boolean = try {
+        if (isOwner(c)) { dpm(c).lockNow(); true } else false
+    } catch (e: Exception) { Log.w("Moyna", "screen off not allowed: ${e.message}"); false }
+
     fun turnOn(a: Activity) { prefs(a).edit().putBoolean("kiosk_off", false).apply(); enter(a) }
 }

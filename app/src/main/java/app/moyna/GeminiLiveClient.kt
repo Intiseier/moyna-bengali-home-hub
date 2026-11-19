@@ -165,6 +165,7 @@ class GeminiLiveClient(
                     JSONObject(), emptyList()))
                 .put(tool("get_prayer_times", "Today's prayer (namaz) times from her mosque calendar. Use for any prayer time question.",
                     JSONObject(), emptyList()))
+                .apply { if (Lights.ready()) put(lightTool()) }
                 .put(tool("look_up", "Look up current information on the internet with Google Search: news, sports scores, prices, weather in other places, opening hours, anything that changes.",
                     JSONObject().put("question", JSONObject().put("type", "STRING")
                         .put("description", "A short English question including the place, e.g. 'weather in Dhaka today'.")),
@@ -177,6 +178,17 @@ class GeminiLiveClient(
             .put("inputAudioTranscription", JSONObject())
             .put("outputAudioTranscription", JSONObject())
         return JSONObject().put("setup", setup).toString()
+    }
+
+    /** set_light: only offered when there are light buttons. The names come from LIGHTS in personal.properties. */
+    private fun lightTool(): JSONObject {
+        val names = JSONArray(); Lights.all.forEach { names.put(it.nameEn) }; names.put("all")
+        val known = Lights.all.joinToString("; ") { "'${it.nameEn}' (in Bengali she may say ${it.nameBn})" }
+        return tool("set_light", "Turn one of her smart-plug lights on or off. Her lights: $known. Use 'all' when she means every light.",
+            JSONObject()
+                .put("light", JSONObject().put("type", "STRING").put("enum", names))
+                .put("on", JSONObject().put("type", "BOOLEAN").put("description", "true = turn on, false = turn off")),
+            listOf("light", "on"))
     }
 
     private fun tool(name: String, description: String, props: JSONObject, required: List<String>): JSONObject {
