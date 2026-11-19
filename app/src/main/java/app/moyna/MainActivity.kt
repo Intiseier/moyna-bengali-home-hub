@@ -261,8 +261,12 @@ class MainActivity : Activity() {
             }
             rest.text = if (times.size > 1) times.drop(1).joinToString("  ·  ") + " " + tr("min", "মি") else ""
         }
-        val p = Prayer.tileText(en)
-        tileSubs["prayer"]?.let { it.text = p?.first ?: ""; it.visibility = if (p == null) View.GONE else View.VISIBLE }
+        val ramadan = Prayer.countdown(en)   // in Ramadan: sehri / iftar countdown instead of the next prayer
+        val p = ramadan ?: Prayer.tileText(en)
+        tileSubs["prayer"]?.let {
+            it.text = p?.first ?: ""; it.visibility = if (p == null) View.GONE else View.VISIBLE
+            it.textSize = if (ramadan != null) 18f else 23f
+        }
         prayerTime?.text = p?.second ?: ""
         tileLabels["prayer"]?.visibility = if (p == null) View.VISIBLE else View.GONE   // the mosque picture says "prayer" already
         if (Weather.has()) {
@@ -661,6 +665,12 @@ class MainActivity : Activity() {
             forceNight = when (it) { "night" -> true; "day" -> false; else -> null }
             if (it == "night") lastTouch = 0
             root.post { applyLook() }
+        }
+        // --es fake_time 2027-02-20T15:30 : show the prayer tile as at that moment (try Ramadan); "off" to stop.
+        intent?.getStringExtra("fake_time")?.let {
+            intent.removeExtra("fake_time")
+            Prayer.testNow = if (it == "off") null else try { java.time.LocalDateTime.parse(it) } catch (e: Exception) { null }
+            root.post { fillTiles() }
         }
         // --es lang bn|en : switch the words on the screen (same as the admin screen switch).
         intent?.getStringExtra("lang")?.let {

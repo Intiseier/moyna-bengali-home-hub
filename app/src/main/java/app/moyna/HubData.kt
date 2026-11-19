@@ -308,12 +308,60 @@ object Prayer {
 
     fun day(d: LocalDate): PrayerDay? = table[d] ?: PrayerCalc.day(d)
 
+    /** Set from the PC to try the screen at another date and time (test command fake_time). */
+    @Volatile var testNow: LocalDateTime? = null
+    fun now(): LocalDateTime = testNow ?: LocalDateTime.now()
+
+    /** The day of Ramadan (1 to 30) for a date, or null outside Ramadan. Umm al-Qura calendar,
+     *  moved by MoynaConfig.RAMADAN_DAY_OFFSET to match the local mosque. */
+    fun ramadanDay(d: LocalDate): Int? = try {
+        val h = java.time.chrono.HijrahDate.from(d.minusDays(MoynaConfig.RAMADAN_DAY_OFFSET.toLong()))
+        if (h.get(java.time.temporal.ChronoField.MONTH_OF_YEAR) == 9) h.get(java.time.temporal.ChronoField.DAY_OF_MONTH) else null
+    } catch (e: Exception) { null }
+
+    /** "1h 25m" / "25 min" (or in Bengali) until [x]. */
+    private fun until(now: LocalDateTime, x: LocalDateTime, english: Boolean): String {
+        val m = Duration.between(now, x).toMinutes().toInt().coerceAtLeast(0) + 1   // count the current minute
+        val h = m / 60; val r = m % 60
+        return if (english) (if (h > 0) "${h}h ${r}m" else "$r min")
+        else (if (h > 0) "${HubData.bn(h)}ঘ ${HubData.bn(r)}মি" else "${HubData.bn(r)} মিনিট")
+    }
+
+    /** In Ramadan, the prayer tile counts down to the end of sehri (when Fajr is next) and to iftar
+     *  (when Maghrib is next): e.g. "Iftar 4:37 PM" and "1h 25m". Null the rest of the time. */
+    fun countdown(english: Boolean, now: LocalDateTime = now()): Pair<String, String>? {
+        val today = day(now.toLocalDate()) ?: return null
+        val t = now.toLocalTime()
+        fun clock(x: LocalTime): String {
+            val h = if (x.hour % 12 == 0) 12 else x.hour % 12
+            return if (english) "$h:${"%02d".format(x.minute)} ${if (x.hour < 12) "AM" else "PM"}"
+            else "${HubData.bn(h)}:${HubData.bn(x.minute).padStart(2, '০')}"
+        }
+        // Iftar: after Asr has started, until Maghrib, on a fasting day.
+        if (ramadanDay(today.date) != null && !t.isBefore(today.asr) && t.isBefore(today.maghrib))
+            return (if (english) "Iftar ${clock(today.maghrib)}" else "ইফতার ${clock(today.maghrib)}") to
+                until(now, LocalDateTime.of(today.date, today.maghrib), english)
+        // Sehri ends at Fajr: after Isha (for tomorrow's fast) or after midnight (for today's).
+        val fastDay = when { t.isBefore(today.fajr) -> today; !t.isBefore(today.isha) -> day(today.date.plusDays(1)); else -> null } ?: return null
+        if (ramadanDay(fastDay.date) == null) return null
+        return (if (english) "Sehri ${clock(fastDay.fajr)}" else "সেহরি ${clock(fastDay.fajr)}") to
+            until(now, LocalDateTime.of(fastDay.date, fastDay.fajr), english)
+    }
+
     /** Days of calendar left (for the "add next month" reminder in the admin screen). */
     fun calendarDaysLeft(): Long? = lastCalendarDate?.let { java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), it) }
 
     /** What Moyna says when the prayer tile is tapped. */
-    fun sentence(now: LocalDateTime = LocalDateTime.now()): String {
+    fun sentence(now: LocalDateTime = now()): String {
         val today = day(now.toLocalDate()) ?: return "নামাজের সময় এখন জানা নেই।"
+        countdown(false, now)?.let { (what, left) ->
+            val isIftar = what.startsWith("ইফতার")
+            val at = if (isIftar) today.maghrib else (if (now.toLocalTime().isBefore(today.fajr)) today else day(today.date.plusDays(1)) ?: today).fajr
+            val time = "${HubData.dayPart(at)} ${HubData.spoken(at)}"
+            val m = java.time.Duration.between(now, LocalDateTime.of(if (isIftar || now.toLocalTime().isBefore(today.fajr)) today.date else today.date.plusDays(1), at)).toMinutes().toInt() + 1
+            val l = if (m >= 60) "${HubData.bn(m / 60)} ঘণ্টা ${HubData.bn(m % 60)} মিনিট" else "${HubData.bn(m)} মিনিট"
+            return if (isIftar) "ইফতার $time, আর $l।" else "সেহরির শেষ সময় $time, আর $l।"
+        }
         val t = now.toLocalTime()
         val ps = today.prayers()
         fun at(x: LocalTime) = "${HubData.dayPart(x)} ${HubData.spoken(x)}"
@@ -334,7 +382,7 @@ object Prayer {
     }
 
     /** For the prayer tile: the next prayer and its time, e.g. "Asr" and "2:56 PM" (or in Bengali). */
-    fun tileText(english: Boolean, now: LocalDateTime = LocalDateTime.now()): Pair<String, String>? {
+    fun tileText(english: Boolean, now: LocalDateTime = now()): Pair<String, String>? {
         val today = day(now.toLocalDate()) ?: return null
         val next = today.prayers().firstOrNull { it.third.isAfter(now.toLocalTime()) }
             ?: day(today.date.plusDays(1))?.prayers()?.first() ?: return null
@@ -347,7 +395,9 @@ object Prayer {
     /** Today's times in English, for Gemini when she asks by voice. */
     fun facts(): String {
         val d = day(LocalDate.now()) ?: return "Prayer times are not available."
-        return "Today's prayer times where she lives (${if (d.calculated) "calculated" else "from her mosque calendar"}): Fajr ${d.fajr}, sunrise ${d.sunrise}, " +
+        val r = ramadanDay(LocalDate.now())
+        val ramadan = if (r != null) "It is Ramadan, day $r. Sehri ends at Fajr, iftar is at Maghrib. " else ""
+        return ramadan + "Today's prayer times where she lives (${if (d.calculated) "calculated" else "from her mosque calendar"}): Fajr ${d.fajr}, sunrise ${d.sunrise}, " +
             "Zuhr ${d.zuhr}, Asr ${d.asr}, Maghrib ${d.maghrib}, Isha ${d.isha} (24-hour clock). Now it is ${LocalTime.now().withSecond(0).withNano(0)}."
     }
 }

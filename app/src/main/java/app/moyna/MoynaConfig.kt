@@ -56,6 +56,9 @@ object MoynaConfig {
     const val WEATHER_REFRESH_MINUTES = 15
     // Azan loudness, 0.0 to 1.0 of the phone's full volume. It is a living room: keep it low.
     const val AZAN_VOLUME = 0.5f
+    // Ramadan (sehri and iftar countdown on the prayer tile) follows the Umm al-Qura calendar.
+    // If your mosque starts Ramadan a day later, set 1 (a day earlier: -1).
+    const val RAMADAN_DAY_OFFSET = 0
     // The azan waits for a conversation to end, but is skipped if it would start later than this.
     const val AZAN_MAX_LATE_SECONDS = 150
     // For months with no calendar file, prayer times are calculated for this spot (New York City's
